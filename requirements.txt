@@ -1,0 +1,5 @@
+aiohttp
+sockjs
+pyyaml
+python-slugify
+uvloop
