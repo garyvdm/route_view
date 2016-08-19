@@ -4,8 +4,8 @@ import logging.config
 import asyncio
 import socket
 import contextlib
+import os
 
-import aiohttp
 import uvloop
 import yaml
 
@@ -17,6 +17,7 @@ defaults_yaml = """
     inet_port: 8080
     debugtoolbar: False
     aioserver_debug: False
+    paths_path: data/paths
 
 
     logging:
@@ -87,6 +88,9 @@ def main():
 
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     loop = asyncio.get_event_loop()
+
+    with contextlib.suppress(FileExistsError):
+        os.mkdir(settings['paths_path'])
 
     with contextlib.ExitStack() as stack:
         stack.enter_context(web_serve_cm(loop, settings))
