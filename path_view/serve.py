@@ -14,7 +14,7 @@ import path_view.web_app
 defaults_yaml = """
     server_type: inet
     inet_host: ''
-    inet_port: 8080
+    inet_port: 6841
     debugtoolbar: False
     aioserver_debug: False
     paths_path: data/paths
@@ -44,6 +44,10 @@ defaults_yaml = """
             aiohttp:
                  level: INFO
                  qualname: aiohttp
+
+            asyncio:
+                 level: INFO
+                 qualname: asyncio
 """
 
 

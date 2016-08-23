@@ -1,5 +1,8 @@
+attrs
 aiohttp
+htmlwrite
 sockjs
 pyyaml
 python-slugify
 uvloop
+msgpack-python
