@@ -1,5 +1,7 @@
 import logging
 import hashlib
+from functools import partial
+
 import pkg_resources
 import uuid
 import os
@@ -8,15 +10,17 @@ import asyncio
 import sockjs
 from aiohttp import web
 from slugify import slugify
-import attr
 
-import path_view.gpx
+from path_view.core import Path
+
 
 def make_aio_app(loop, settings):
     app = web.Application(loop=loop)
     app['path_view.settings'] = settings
     app['path_view.static_etags'] = {}
     app['path_view.paths'] = {}
+    app['path_view.paths_process_tasks'] = {}
+    app['path_view.paths_sessions'] = {}
 
     if settings['debugtoolbar']:
         try:
@@ -69,9 +73,9 @@ async def upload_path(request):
     app = request.app
     path_id = str(uuid.uuid4())
     path_dir_path = os.path.join(app['path_view.settings']['paths_path'], path_id)
-    path = Path(id=path_id, dir_path=path_dir_path, upload_file=upload_file)
+    path = Path(id=path_id, dir_path=path_dir_path)
     app['path_view.paths'][path_id] = path
-    path.set_process_task(asyncio.ensure_future(path.process_upload()))
+    set_process_task(request.app, path_id, path.process_upload(upload_file))
     return web.HTTPFound('/view/{}/'.format(path_id))
 
 
@@ -85,50 +89,27 @@ class SessionManagerWithRequest(sockjs.SessionManager):
 
 
 async def path_sock(msg, session):
+    path_sessions = session.request.app['path_view.paths_sessions'][session.path_id]
     path = session.request.app['path_view.paths'][session.path_id]
+    if msg.tp == sockjs.MSG_OPEN:
+        path_sessions.append(session)
+    elif msg.tp == sockjs.MSG_CLOSED:
+        path_sessions.remove(session)
+    # elif msg.tp == sockjs.MSG_MESSAGE:
+    #     session.manager.broadcast(msg.data)
 
 
+def set_process_task(app, path_id, process_task):
+    process_task = asyncio.ensure_future(process_task)
+    paths_process_tasks = app['path_view.paths_process_tasks']
+    assert path_id not in paths_process_tasks
+    paths_process_tasks[path_id] = process_task
+    process_task.add_done_callback(partial(process_task_done_callback, path_id))
 
-@attr.s
-class Path(object):
-    id = attr.ib()
-    # name = attr.ib()
-    dir_path = attr.ib()
-    upload_file = attr.ib()
-    route_points = attr.ib(default=None, init=False)
-    _process_task = attr.ib(default=None, init=False)
-    sock_sessions = attr.ib(default=[], init=False)
 
-    def set_process_task(self, process_task):
-
-        assert self._process_task is None
-        self._process_task = process_task
-        process_task.add_done_callback(self.process_task_done_callback)
-
-    def sock_handler(self, msg, session):
-        if msg.tp == sockjs.MSG_OPEN:
-            self.sock_sessions.append(session)
-        elif msg.tp == sockjs.MSG_CLOSED:
-            self.sock_sessions.remove(session)
-        # elif msg.tp == sockjs.MSG_MESSAGE:
-        #     session.manager.broadcast(msg.data)
-
-    def process_task_done_callback(self, fut):
-        try:
-            fut.result()
-        except Exception:
-            logging.exception("Error processing: ")
-
-    async def process_upload(self):
-        os.mkdir(self.dir_path)
-        with open(os.path.join(self.dir_path, 'upload.gpx'), 'wb') as f:
-            f.write(self.upload_file)
-        self.route_points = path_view.gpx.get_points(self.upload_file)
-        self.reset_processed()
-        await self.process()
-
-    def reset_processed(self):
-        pass
-
-    async def process(self):
-        pass
+def process_task_done_callback(path_id, fut):
+    try:
+        fut.result()
+        logging.info("Done processing.")
+    except Exception:
+        logging.exception("Error processing: ")

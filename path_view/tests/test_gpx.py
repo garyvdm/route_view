@@ -1,8 +1,7 @@
 import unittest
 import textwrap
 
-import path_view.gpx
-from path_view.point import Point
+from path_view.core import gpx_get_points, Point
 
 
 class TestGpx(unittest.TestCase):
@@ -19,7 +18,7 @@ class TestGpx(unittest.TestCase):
             </trk>
             </gpx>
         """).lstrip('\n')
-        points = path_view.gpx.get_points(gpx)
+        points = gpx_get_points(gpx)
         expected_points = [Point(lat='-26.09321', lng='27.9813'),
                            Point(lat='-26.0933', lng='27.98154'),
                            Point(lat='-26.09341', lng='27.98186')]
