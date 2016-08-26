@@ -12,20 +12,20 @@ wgs84 = nvector.FrameE(name='WGS84')
 class Point(object):
     lat = attr.ib()
     lng = attr.ib()
-    _nv_geopoint = attr.ib(default=None, init=False, cmp=False, hash=False)
-    _nv = attr.ib(default=None, init=False, cmp=False, hash=False)
+    i_nv_geopoint = attr.ib(default=None, cmp=False, hash=False)
+    i_nv = attr.ib(default=None, cmp=False, hash=False)
 
     @property
     def nv_geopoint(self):
-        if not self._nv_geopoint:
-            self._nv_geopoint = wgs84.GeoPoint(latitude=self.lat, longitude=self.lng, degrees=True)
-        return self._nv_geopoint
+        if not self.i_nv_geopoint:
+            self.i_nv_geopoint = wgs84.GeoPoint(latitude=self.lat, longitude=self.lng, degrees=True)
+        return self.i_nv_geopoint
 
     @property
     def nv(self):
-        if not self._nv:
-            self._nv = self.nv_geopoint.to_nvector()
-        return self._nv
+        if not self.i_nv:
+            self.i_nv = self.nv_geopoint.to_nvector()
+        return self.i_nv
 
 
 @attr.s
@@ -103,3 +103,16 @@ def find_closest_point_pair(points, to_point, req_min_dist=20, stop_after_dist=1
 
     return min_point_pair
 
+
+def iter_points_with_minimal_spacing(points, spacing=10):
+    for point1, point2 in pairs(points):
+        yield point1
+        dist, azi1, azi2 = point1.nv_geopoint.distance_and_azimuth(point2.nv_geopoint)
+        pair_points = round(dist / spacing)
+        pair_spacing = dist / pair_points
+        for i in range(1, pair_points-1):
+            point_dist = i * pair_spacing
+            add_geopoint = point1.nv_geopoint.geo_point(point_dist, azi1)[0]
+            add_point = Point(lat=add_geopoint.latitude_deg, lng=add_geopoint.longitude_deg, i_nv_geopoint=add_geopoint)
+            yield add_point
+    yield point2
