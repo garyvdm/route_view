@@ -1,6 +1,7 @@
 attrs
 aiohttp
 htmlwrite
+nvector
 sockjs
 pyyaml
 python-slugify
