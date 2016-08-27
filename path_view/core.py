@@ -1,8 +1,12 @@
 import os
 import logging
+import json
+import functools
 import xml.etree.ElementTree as xml
 
+import aiohttp
 import attr
+import unqlite
 from nvector import (
     FrameE,
     unit,
@@ -47,8 +51,7 @@ class Path(object):
     id = attr.ib()
     # name = attr.ib()
     dir_path = attr.ib()
-    streetview_session = attr.ib()
-    api_key = attr.ib()
+    google_api = attr.ib()
     new_pano_callback = attr.ib()
     route_points = attr.ib(default=None, init=False)
     panos = attr.ib(default=[], init=False)
@@ -66,7 +69,7 @@ class Path(object):
         self.panos = []
 
     async def process(self):
-        # if self.panos:
+        # if self.panos:GoogleApi
         #     last_pano = self.panos[-1]
         #     last_point_index = self.route_points[last_pano.closest_point_pair_index]
         # else:
@@ -81,16 +84,7 @@ class Path(object):
             if last_pano is None:
                 for point in iter_points_with_minimal_spacing([last_point] + self.route_points[last_point_index+1:],
                                                               spacing=10):
-                    async with self.streetview_session.get(
-                            'http://cbks0.googleapis.com/cbk',
-                            params={
-                                'output': 'json',
-                                'radius': 10,
-                                'll': latlng_urlstr(point),
-                                'key': self.api_key,
-                            }) as r:
-                        r.raise_for_status()
-                        pano_data = await r.json()
+                    pano_data = await self.google_api.get_pano_ll(point)
                     if pano_data:
                         break
                 else:
@@ -115,15 +109,7 @@ class Path(object):
                         link_pano_id = pano_link['panoId']
 
                 if link_pano_id:
-                    async with self.streetview_session.get(
-                            'http://cbks0.googleapis.com/cbk',
-                            params={
-                                'output': 'json',
-                                'panoid': link_pano_id,
-                                'key': self.api_key,
-                            }) as r:
-                        r.raise_for_status()
-                        pano_data = await r.json()
+                    pano_data = await self.google_api.get_pano_id(link_pano_id)
                 else:
                     last_pano = None
                     pano_data = None
@@ -234,3 +220,63 @@ def deg_wrap_to_closest(deg, to_deg):
     up = deg + 360
     down = deg - 360
     return min(deg, up, down, key=lambda x: abs(to_deg - x))
+
+
+class GoogleApi(object):
+
+    def __init__(self, api_key, cache_db, loop):
+        self.session = aiohttp.ClientSession()
+        self.api_key = api_key
+        self.cache_db = unqlite.UnQLite(cache_db)
+        self.loop = loop
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.session.close()
+        self.cache_db.close()
+
+    async def get_pano_ll(self, point, radius=10):
+        key = 'll{:=+3.8f}{:=+3.8f}-{}'.format(point.lat, point.lng, radius)
+        try:
+            id = self.cache_db[key]
+        except KeyError:
+            async with self.session.get(
+                    'http://cbks0.googleapis.com/cbk',
+                    params={
+                        'output': 'json',
+                        'radius': radius,
+                        'll': latlng_urlstr(point),
+                        'key': self.api_key,
+                    }) as r:
+                r.raise_for_status()
+                text = await r.text()
+            data = json.loads(text)
+            id = data['Location']['panoId']
+            self.cache_db[key] = id
+            if id not in self.cache_db:
+                self.cache_db[id] = text
+            return data
+        else:
+            return await self.get_pano_id(id)
+
+    @functools.lru_cache()
+    async def get_pano_id(self, id):
+        try:
+            text = self.cache_db[id]
+        except KeyError:
+            async with self.session.get(
+                    'http://cbks0.googleapis.com/cbk',
+                    params={
+                        'output': 'json',
+                        'panoid': id,
+                        'key': self.api_key,
+                    }) as r:
+                r.raise_for_status()
+                text = await r.text()
+            self.cache_db[id] = text
+        return json.loads(text)
+
+
+

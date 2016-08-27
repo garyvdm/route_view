@@ -1,9 +1,10 @@
 attrs
 aiohttp
 htmlwrite
+msgpack-python
 nvector
-sockjs
 pyyaml
 python-slugify
+sockjs
 uvloop
-msgpack-python
+unqlite

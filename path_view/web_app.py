@@ -15,10 +15,10 @@ from slugify import slugify
 from path_view.core import Path, Point
 
 
-def make_aio_app(loop, settings, streetview_session):
+def make_aio_app(loop, settings, google_api):
     app = web.Application(loop=loop)
     app['path_view.settings'] = settings
-    app['path_view.streetview_session'] = streetview_session
+    app['path_view.google_api'] = google_api
     app['path_view.static_etags'] = {}
     app['path_view.paths'] = {}
     app['path_view.paths_process_tasks'] = {}
@@ -79,7 +79,7 @@ async def upload_path(request):
     sessions = []
     request.app['path_view.paths_sessions'][path_id] = sessions
     path = Path(id=path_id, dir_path=path_dir_path,
-                streetview_session=app['path_view.streetview_session'], api_key=app['path_view.settings']['api_key'],
+                google_api=app['path_view.google_api'],
                 new_pano_callback=partial(new_pano_callback, sessions))
     app['path_view.paths'][path_id] = path
     set_process_task(request.app, path_id, path.process_upload(upload_file))

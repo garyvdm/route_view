@@ -11,6 +11,7 @@ import yaml
 import aiohttp
 
 import path_view.web_app
+import path_view.core
 
 defaults_yaml = """
     server_type: inet
@@ -19,6 +20,7 @@ defaults_yaml = """
     debugtoolbar: False
     aioserver_debug: False
     paths_path: data/paths
+    api_cache_db: data/api_cache
 
 
     logging:
@@ -106,8 +108,9 @@ def main():
         os.mkdir(settings['paths_path'])
 
     with contextlib.ExitStack() as stack:
-        streetview_session = stack.enter_context(contextlib.closing(aiohttp.ClientSession()))
-        stack.enter_context(web_serve_cm(loop, settings, streetview_session))
+        google_api = stack.enter_context(path_view.core.GoogleApi(settings['api_key'], settings['api_cache_db'], asyncio.get_event_loop()))
+
+        stack.enter_context(web_serve_cm(loop, settings, google_api))
         try:
             loop.run_forever()
         except KeyboardInterrupt:
@@ -118,8 +121,8 @@ def main():
 
 
 @contextlib.contextmanager
-def web_serve_cm(loop, settings, streetview_session):
-    app = path_view.web_app.make_aio_app(loop, settings, streetview_session)
+def web_serve_cm(loop, settings, google_api):
+    app = path_view.web_app.make_aio_app(loop, settings, google_api)
 
     handler = app.make_handler(debug=settings.get('aioserver_debug', False))
 

@@ -2,8 +2,7 @@ import unittest
 import tempfile
 import contextlib
 import os
-
-import aiohttp
+import asyncio
 
 from path_view.tests import unittest_run_loop
 from path_view.core import (
@@ -12,6 +11,7 @@ from path_view.core import (
     Path,
     find_closest_point_pair,
     iter_points_with_minimal_spacing,
+    GoogleApi,
 )
 
 
@@ -40,17 +40,17 @@ class TestPointProcess(unittest.TestCase):
     async def test_process(self):
 
         with contextlib.ExitStack() as stack:
-            tempdir = stack.enter_context(tempfile.TemporaryDirectory())
-            streetview_session = stack.enter_context(contextlib.closing(aiohttp.ClientSession()))
             try:
                 api_key = os.environ['PATHVIEW_TEST_APIKEY']
             except KeyError:
                 raise unittest.SkipTest('PATHVIEW_TEST_APIKEY env key not set.')
+            api = stack.enter_context(GoogleApi(api_key, ':mem:', asyncio.get_event_loop()))
+            tempdir = stack.enter_context(tempfile.TemporaryDirectory())
 
             def new_pano_callback(pano):
                 pass
 
-            path = Path(None, tempdir, streetview_session, api_key, new_pano_callback)
+            path = Path(None, tempdir, api, new_pano_callback)
             path.route_points = [
                 IndexedPoint(lat=-26.09332, lng=27.9812, index=0),
                 IndexedPoint(lat=-26.09326, lng=27.98112, index=1),
