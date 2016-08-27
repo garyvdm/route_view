@@ -1,5 +1,6 @@
 import logging
 import hashlib
+import json
 from functools import partial
 
 import pkg_resources
@@ -11,7 +12,7 @@ import sockjs
 from aiohttp import web
 from slugify import slugify
 
-from path_view.core import Path
+from path_view.core import Path, Point
 
 
 def make_aio_app(loop, settings, streetview_session):
@@ -41,8 +42,9 @@ def make_aio_app(loop, settings, streetview_session):
     add_static_resource(
         app, 'static/view.js', 'GET', '/static/view.js',
         content_type='application/javascript', charset='utf8',)
-    manager = SessionManagerWithRequest('path_sock', app, path_sock, app.loop)
-    sockjs.add_endpoint(app, prefix='/path_sock/{path_id}/', handler=path_sock, manager=manager, name='path_sock')
+    path_sock_handler = partial(path_sock, app)
+    manager = SessionManagerWithRequest('path_sock', app, path_sock_handler, app.loop)
+    sockjs.add_endpoint(app, prefix='/path_sock/{path_id}/', handler=path_sock_handler, manager=manager, name='path_sock')
     return app
 
 
@@ -74,8 +76,11 @@ async def upload_path(request):
     app = request.app
     path_id = str(uuid.uuid4())
     path_dir_path = os.path.join(app['path_view.settings']['paths_path'], path_id)
+    sessions = []
+    request.app['path_view.paths_sessions'][path_id] = sessions
     path = Path(id=path_id, dir_path=path_dir_path,
-                streetview_session=app['path_view.streetview_session'], api_key=app['path_view.settings']['api_key'])
+                streetview_session=app['path_view.streetview_session'], api_key=app['path_view.settings']['api_key'],
+                new_pano_callback=partial(new_pano_callback, sessions))
     app['path_view.paths'][path_id] = path
     set_process_task(request.app, path_id, path.process_upload(upload_file))
     return web.HTTPFound('/view/{}/'.format(path_id))
@@ -90,11 +95,13 @@ class SessionManagerWithRequest(sockjs.SessionManager):
         return session
 
 
-async def path_sock(msg, session):
-    path_sessions = session.request.app['path_view.paths_sessions'][session.path_id]
-    path = session.request.app['path_view.paths'][session.path_id]
+async def path_sock(app, msg, session):
+    path_sessions = app['path_view.paths_sessions'][session.path_id]
+    path = app['path_view.paths'][session.path_id]
     if msg.tp == sockjs.MSG_OPEN:
         path_sessions.append(session)
+        msg = json.dumps({'panos': path.panos, }, default=json_encode)
+        session.send(msg)
     elif msg.tp == sockjs.MSG_CLOSED:
         path_sessions.remove(session)
     # elif msg.tp == sockjs.MSG_MESSAGE:
@@ -106,12 +113,23 @@ def set_process_task(app, path_id, process_task):
     paths_process_tasks = app['path_view.paths_process_tasks']
     assert path_id not in paths_process_tasks
     paths_process_tasks[path_id] = process_task
-    process_task.add_done_callback(partial(process_task_done_callback, path_id))
+    sessions = app['path_view.paths_sessions'][path_id]
+    process_task.add_done_callback(partial(process_task_done_callback, sessions))
 
 
-def process_task_done_callback(path_id, fut):
+def process_task_done_callback(path_sessions, fut):
     try:
         fut.result()
         logging.info("Done processing.")
-    except Exception:
+    except Exception as e:
         logging.exception("Error processing: ")
+
+
+def new_pano_callback(path_sessions, pano):
+    msg = json.dumps({'panos': [pano], }, default=json_encode)
+    for session in path_sessions:
+        session.send(msg)
+
+def json_encode(obj):
+    if isinstance(obj, Point):
+        return (obj.lat, obj.lng)

@@ -46,7 +46,11 @@ class TestPointProcess(unittest.TestCase):
                 api_key = os.environ['PATHVIEW_TEST_APIKEY']
             except KeyError:
                 raise unittest.SkipTest('PATHVIEW_TEST_APIKEY env key not set.')
-            path = Path(None, tempdir, streetview_session, api_key)
+
+            def new_pano_callback(pano):
+                pass
+
+            path = Path(None, tempdir, streetview_session, api_key, new_pano_callback)
             path.route_points = [
                 IndexedPoint(lat=-26.09332, lng=27.9812, index=0),
                 IndexedPoint(lat=-26.09326, lng=27.98112, index=1),

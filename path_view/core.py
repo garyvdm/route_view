@@ -49,6 +49,7 @@ class Path(object):
     dir_path = attr.ib()
     streetview_session = attr.ib()
     api_key = attr.ib()
+    new_pano_callback = attr.ib()
     route_points = attr.ib(default=None, init=False)
     panos = attr.ib(default=[], init=False)
     prefered_pano_chain = attr.ib(default={}, init=False)
@@ -147,6 +148,7 @@ class Path(object):
                     last_pano = pano
                     last_point_index = point_pair[0].index
                     last_point = c_point
+                    self.new_pano_callback(pano)
                     logging.info("{description} ({point.lat},{point.lng}) {i}".format(**pano))
             if last_point == self.route_points[-1]:
                 break
