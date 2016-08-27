@@ -8,6 +8,7 @@ import os
 
 import uvloop
 import yaml
+import aiohttp
 
 import path_view.web_app
 
@@ -63,6 +64,8 @@ def main():
                         help='Path of unix socket to listen on. ')
     parser.add_argument('--dev', action='store_true',
                         help='Enable development tools (e.g. debug toolbar.)')
+    parser.add_argument('--api-key', action='store',
+                        help='Google api key. ')
     args = parser.parse_args()
 
 
@@ -89,6 +92,8 @@ def main():
     if args.dev:
         settings['debugtoolbar'] = True
         settings['aioserver_debug'] = True
+    if args.api_key:
+        settings['api_key'] = args.api_key
 
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     loop = asyncio.get_event_loop()
@@ -97,7 +102,8 @@ def main():
         os.mkdir(settings['paths_path'])
 
     with contextlib.ExitStack() as stack:
-        stack.enter_context(web_serve_cm(loop, settings))
+        streetview_session = stack.enter_context(contextlib.closing(aiohttp.ClientSession()))
+        stack.enter_context(web_serve_cm(loop, settings, streetview_session))
         try:
             loop.run_forever()
         except KeyboardInterrupt:
@@ -108,8 +114,8 @@ def main():
 
 
 @contextlib.contextmanager
-def web_serve_cm(loop, settings):
-    app = path_view.web_app.make_aio_app(loop, settings)
+def web_serve_cm(loop, settings, streetview_session):
+    app = path_view.web_app.make_aio_app(loop, settings, streetview_session)
 
     handler = app.make_handler(debug=settings.get('aioserver_debug', False))
 
@@ -132,3 +138,4 @@ def web_serve_cm(loop, settings):
         srv.close()
         loop.run_until_complete(srv.wait_closed())
         loop.run_until_complete(app.finish())
+

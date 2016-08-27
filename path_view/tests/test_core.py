@@ -1,7 +1,15 @@
 import unittest
+import tempfile
+import contextlib
+import os
 
+import aiohttp
+
+from path_view.tests import unittest_run_loop
 from path_view.core import (
     Point,
+    IndexedPoint,
+    Path,
     find_closest_point_pair,
     iter_points_with_minimal_spacing,
 )
@@ -23,3 +31,26 @@ class TestHelpers(unittest.TestCase):
         for point in points_with_minimal_spacing:
             print(point)
         self.assertEqual(len(points_with_minimal_spacing), 5)
+
+
+
+class TestPointProcess(unittest.TestCase):
+
+    @unittest_run_loop
+    async def test_process(self):
+
+        with contextlib.ExitStack() as stack:
+            tempdir = stack.enter_context(tempfile.TemporaryDirectory())
+            streetview_session = stack.enter_context(contextlib.closing(aiohttp.ClientSession()))
+            try:
+                api_key = os.environ['PATHVIEW_TEST_APIKEY']
+            except KeyError:
+                raise unittest.SkipTest('PATHVIEW_TEST_APIKEY env key not set.')
+            path = Path(None, tempdir, streetview_session, api_key)
+            path.route_points = [
+                IndexedPoint(lat=-26.09332, lng=27.9812, index=0),
+                IndexedPoint(lat=-26.09326, lng=27.98112, index=1),
+                IndexedPoint(lat=-26.09264, lng=27.97940, index=2),
+            ]
+            await path.process()
+

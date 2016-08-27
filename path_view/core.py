@@ -1,4 +1,5 @@
 import os
+import logging
 import xml.etree.ElementTree as xml
 
 import attr
@@ -20,8 +21,8 @@ wgs84 = FrameE(name='WGS84')
 class Point(object):
     lat = attr.ib()
     lng = attr.ib()
-    i_nv_geopoint = attr.ib(default=None, cmp=False, hash=False)
-    i_nv = attr.ib(default=None, cmp=False, hash=False)
+    i_nv_geopoint = attr.ib(default=None, cmp=False, hash=False, repr=False)
+    i_nv = attr.ib(default=None, cmp=False, hash=False, repr=False)
 
     @property
     def nv_geopoint(self):
@@ -46,7 +47,11 @@ class Path(object):
     id = attr.ib()
     # name = attr.ib()
     dir_path = attr.ib()
+    streetview_session = attr.ib()
+    api_key = attr.ib()
     route_points = attr.ib(default=None, init=False)
+    panos = attr.ib(default=[], init=False)
+    prefered_pano_chain = attr.ib(default={}, init=False)
 
     async def process_upload(self, upload_file):
         os.mkdir(self.dir_path)
@@ -57,10 +62,94 @@ class Path(object):
         await self.process()
 
     def reset_processed(self):
-        pass
+        self.panos = []
 
     async def process(self):
-        pass
+        # if self.panos:
+        #     last_pano = self.panos[-1]
+        #     last_point_index = self.route_points[last_pano.closest_point_pair_index]
+        # else:
+        #     last_pano = None
+        #     last_point_index = 0
+        last_pano = None
+        last_point = self.route_points[0]
+        last_point_index = 0
+
+
+        while True:
+            if last_pano is None:
+                for point in iter_points_with_minimal_spacing([last_point] + self.route_points[last_point_index+1:],
+                                                              spacing=10):
+                    async with self.streetview_session.get(
+                            'http://cbks0.googleapis.com/cbk',
+                            params={
+                                'output': 'json',
+                                'radius': 10,
+                                'll': latlng_urlstr(point),
+                                'key': self.api_key,
+                            }) as r:
+                        r.raise_for_status()
+                        pano_data = await r.json()
+                    if pano_data:
+                        break
+                else:
+                    break
+            else:
+                if last_pano['id'] in self.prefered_pano_chain:
+                    link_pano_id = self.prefered_pano_chain[last_pano['id']]
+                else:
+                    # if last_point_index == len(points_indexed) -1 :
+                    #     break
+
+                    point1 = self.route_points[last_point_index]
+                    point2 = self.route_points[last_point_index + 1]
+                    yaw_to_next = deg(point1.nv_geopoint.distance_and_azimuth(point2.nv_geopoint)[1])
+                    yaw_diff = lambda item: abs(deg_wrap_to_closest(item['yaw'] - yaw_to_next, 0))
+                    pano_link = min(last_pano['links'], key=yaw_diff)
+
+                    if yaw_diff(pano_link) > 20:
+                        logging.debug("Yaw too different: {} {} {}".format(yaw_diff(pano_link), pano_link['yaw'], yaw_to_next))
+                        link_pano_id = None
+                    else:
+                        link_pano_id = pano_link['panoId']
+
+                if link_pano_id:
+                    async with self.streetview_session.get(
+                            'http://cbks0.googleapis.com/cbk',
+                            params={
+                                'output': 'json',
+                                'panoid': link_pano_id,
+                                'key': self.api_key,
+                            }) as r:
+                        r.raise_for_status()
+                        pano_data = await r.json()
+                else:
+                    last_pano = None
+                    pano_data = None
+
+            if pano_data:
+                location = pano_data['Location']
+                pano_point = Point(lat=float(location['lat']), lng=float(location['lng']))
+                point_pair, c_point, dist = find_closest_point_pair(self.route_points[last_point_index:], pano_point)
+
+                if dist > 30:
+                    logging.debug("Distance {} to nearest point too great for pano: {}"
+                                  .format(dist, location['panoId']))
+                    last_pano = None
+                else:
+                    heading = deg(point_pair[0].nv_geopoint.distance_and_azimuth(point_pair[1].nv_geopoint)[1])
+                    links = [dict(panoId=link['panoId'], yaw=float(link['yawDeg']))
+                             for link in pano_data['Links']]
+                    pano = dict(
+                        id=location['panoId'], point=pano_point,
+                        description=location['description'], links=links, i=last_point_index, heading=heading)
+                    self.panos.append(pano)
+                    last_pano = pano
+                    last_point_index = point_pair[0].index
+                    last_point = c_point
+                    logging.info("{description} ({point.lat},{point.lng}) {i}".format(**pano))
+            if last_point == self.route_points[-1]:
+                break
 
 
 gpx_ns = {
@@ -134,3 +223,12 @@ def iter_points_with_minimal_spacing(points, spacing=10):
             add_point = Point(lat=add_geopoint.latitude_deg, lng=add_geopoint.longitude_deg, i_nv_geopoint=add_geopoint)
             yield add_point
     yield point2
+
+
+latlng_urlstr = lambda point: "{},{}".format(point.lat, point.lng)
+
+
+def deg_wrap_to_closest(deg, to_deg):
+    up = deg + 360
+    down = deg - 360
+    return min(deg, up, down, key=lambda x: abs(to_deg - x))
