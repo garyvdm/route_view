@@ -28,6 +28,11 @@ class Point(object):
         return self.i_nv
 
 
+@attr.s(slots=True)
+class IndexedPoint(Point):
+    index = attr.ib(default=None, )
+
+
 @attr.s
 class Path(object):
     id = attr.ib()
@@ -58,7 +63,8 @@ gpx_ns = {
 def gpx_get_points(gpx):
     doc = xml.fromstring(gpx)
     trkpts = doc.findall('./gpx11:trk/gpx11:trkseg/gpx11:trkpt', gpx_ns)
-    points = [Point(trkpt.attrib['lat'], trkpt.attrib['lon']) for trkpt in trkpts]
+    points = [IndexedPoint(lat=float(trkpt.attrib['lat']), lng=float(trkpt.attrib['lon']), index=i)
+              for i, trkpt in enumerate(trkpts)]
     return points
 
 

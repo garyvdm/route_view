@@ -1,7 +1,7 @@
 import unittest
 import textwrap
 
-from path_view.core import gpx_get_points, Point
+from path_view.core import gpx_get_points, IndexedPoint
 
 
 class TestGpx(unittest.TestCase):
@@ -19,7 +19,7 @@ class TestGpx(unittest.TestCase):
             </gpx>
         """).lstrip('\n')
         points = gpx_get_points(gpx)
-        expected_points = [Point(lat='-26.09321', lng='27.9813'),
-                           Point(lat='-26.0933', lng='27.98154'),
-                           Point(lat='-26.09341', lng='27.98186')]
+        expected_points = [IndexedPoint(lat=-26.09321, lng=27.98130, index=0),
+                           IndexedPoint(lat=-26.09330, lng=27.98154, index=1),
+                           IndexedPoint(lat=-26.09341, lng=27.98186, index=2)]
         self.assertEqual(points, expected_points)
