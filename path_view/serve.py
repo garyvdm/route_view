@@ -52,9 +52,6 @@ defaults_yaml = """
                  level: INFO
                  qualname: asyncio
 
-            sockjs:
-                 level: INFO
-                 qualname: sockjs
 """
 
 

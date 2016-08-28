@@ -5,6 +5,5 @@ msgpack-python
 nvector
 pyyaml
 python-slugify
-sockjs
 uvloop
 unqlite

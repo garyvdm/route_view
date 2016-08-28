@@ -8,8 +8,7 @@ import uuid
 import os
 import asyncio
 
-import sockjs
-from aiohttp import web
+from aiohttp import web, MsgType
 from slugify import slugify
 
 from path_view.core import Path, Point
@@ -42,9 +41,7 @@ def make_aio_app(loop, settings, google_api):
     add_static_resource(
         app, 'static/view.js', 'GET', '/static/view.js',
         content_type='application/javascript', charset='utf8',)
-    path_sock_handler = partial(path_sock, app)
-    manager = SessionManagerWithRequest('path_sock', app, path_sock_handler, app.loop)
-    sockjs.add_endpoint(app, prefix='/path_sock/{path_id}/', handler=path_sock_handler, manager=manager, name='path_sock')
+    app.router.add_route('*', '/path_sock/{path_id}/', handler=path_ws, name='path_ws')
     return app
 
 
@@ -86,26 +83,32 @@ async def upload_path(request):
     return web.HTTPFound('/view/{}/'.format(path_id))
 
 
-# Hack to make session include first request.
-class SessionManagerWithRequest(sockjs.SessionManager):
-    def get(self, id, create=False, request=None, default=sockjs.session._marker):
-        session = super().get(id, create=create, request=request, default=default)
-        if not hasattr(session, 'path_id'):
-            session.path_id = request.match_info['path_id']
-        return session
 
 
-async def path_sock(app, msg, session):
-    path_sessions = app['path_view.paths_sessions'][session.path_id]
-    path = app['path_view.paths'][session.path_id]
-    if msg.tp == sockjs.MSG_OPEN:
-        path_sessions.append(session)
-        msg = json.dumps({'panos': path.panos, }, default=json_encode)
-        session.send(msg)
-    elif msg.tp == sockjs.MSG_CLOSED:
-        path_sessions.remove(session)
-    # elif msg.tp == sockjs.MSG_MESSAGE:
-    #     session.manager.broadcast(msg.data)
+async def path_ws(request):
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+
+    path_id = request.match_info['path_id']
+    path = request.app['path_view.paths'][path_id]
+    path_sessions = request.app['path_view.paths_sessions'][path_id]
+    path_sessions.append(ws)
+
+    # Send initial data.
+    ws.send_str(json.dumps({'panos': path.panos, }, default=json_encode))
+
+
+    async for msg in ws:
+        if msg.tp == MsgType.text:
+            if msg.data == 'close':
+                await ws.close()
+                path_sessions.remove(ws)
+            else:
+                pass
+        elif msg.tp == MsgType.error:
+            raise ws.exception()
+    return ws
+
 
 
 def set_process_task(app, path_id, process_task):
@@ -128,7 +131,7 @@ def process_task_done_callback(path_sessions, fut):
 def new_pano_callback(path_sessions, pano):
     msg = json.dumps({'panos': [pano], }, default=json_encode)
     for session in path_sessions:
-        session.send(msg)
+        session.send_str(msg)
 
 def json_encode(obj):
     if isinstance(obj, Point):
