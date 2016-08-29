@@ -32,6 +32,11 @@ class TestHelpers(unittest.TestCase):
             print(point)
         self.assertEqual(len(points_with_minimal_spacing), 5)
 
+    def test_iter_points_with_minimal_spacing_close_points(self):
+        # Points that a closer together then the spacing value should work too.
+        points = [Point(0, 0), Point(0, 0.0000001)]
+        points_with_minimal_spacing = list(iter_points_with_minimal_spacing(points, spacing=4000))
+        self.assertEqual(len(points_with_minimal_spacing), 2)
 
 
 class TestPointProcess(unittest.TestCase):

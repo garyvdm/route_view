@@ -204,12 +204,13 @@ def iter_points_with_minimal_spacing(points, spacing=10):
         yield point1
         dist, azi1, azi2 = point1.nv_geopoint.distance_and_azimuth(point2.nv_geopoint)
         pair_points = round(dist / spacing)
-        pair_spacing = dist / pair_points
-        for i in range(1, pair_points-1):
-            point_dist = i * pair_spacing
-            add_geopoint = point1.nv_geopoint.geo_point(point_dist, azi1)[0]
-            add_point = Point(lat=add_geopoint.latitude_deg, lng=add_geopoint.longitude_deg, i_nv_geopoint=add_geopoint)
-            yield add_point
+        if pair_points:
+            pair_spacing = dist / pair_points
+            for i in range(1, pair_points-1):
+                point_dist = i * pair_spacing
+                add_geopoint = point1.nv_geopoint.geo_point(point_dist, azi1)[0]
+                add_point = Point(lat=add_geopoint.latitude_deg, lng=add_geopoint.longitude_deg, i_nv_geopoint=add_geopoint)
+                yield add_point
     yield point2
 
 
