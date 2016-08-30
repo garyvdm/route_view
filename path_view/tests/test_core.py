@@ -69,4 +69,3 @@ class TestPointProcess(unittest.TestCase):
             await loaded_path.ensure_data_loaded()
             self.assertEqual(path.route_points, loaded_path.route_points)
             self.assertEqual(path.panos, loaded_path.panos)
-

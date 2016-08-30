@@ -99,7 +99,6 @@ async def path_ws(request):
     # Send initial data.
     ws.send_str(json.dumps({'panos': path.panos, }, default=json_encode))
 
-
     async for msg in ws:
         if msg.tp == MsgType.text:
             if msg.data == 'close':
@@ -112,11 +111,11 @@ async def path_ws(request):
     return ws
 
 
-
 def new_pano_callback(path_sessions, pano):
     msg = json.dumps({'panos': [pano], }, default=json_encode)
     for session in path_sessions:
         session.send_str(msg)
+
 
 def json_encode(obj):
     if isinstance(obj, Point):

@@ -7,10 +7,10 @@ import path_view
 
 logging.basicConfig(level=logging.DEBUG)
 
+
 def suite():
     tests = unittest.defaultTestLoader.discover(path_view.__path__[0])
     return unittest.TestSuite(tests)
-
 
 
 def unittest_run_loop(func):

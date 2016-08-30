@@ -59,6 +59,7 @@ class IndexedPoint(Point):
 path_meta_attrs = {'name', 'processing_complete'}
 path_route_attrs = {'route_points', }
 
+
 @attr.s
 class Path(object):
     id = attr.ib()
@@ -173,7 +174,7 @@ class Path(object):
 
             while True:
                 if last_pano is None:
-                    for point in iter_points_with_minimal_spacing([last_point] + self.route_points[last_point_index+1:],
+                    for point in iter_points_with_minimal_spacing([last_point] + self.route_points[last_point_index + 1:],
                                                                   spacing=10):
                         pano_data = await google_api.get_pano_ll(point)
                         if pano_data:
@@ -275,7 +276,7 @@ def find_closest_point_pair(points, to_point, req_min_dist=20, stop_after_dist=1
         dp1p2 = arccos(dot(p1h, p2h))
 
         sutable_c = None
-        for co in (c, 0-c):
+        for co in (c, 0 - c):
             dp1co = arccos(dot(p1h, co))
             dp2co = arccos(dot(p2h, co))
             if abs(dp1co + dp2co - dp1p2) < 0.000001:
@@ -307,7 +308,7 @@ def iter_points_with_minimal_spacing(points, spacing=10):
         pair_points = round(dist / spacing)
         if pair_points:
             pair_spacing = dist / pair_points
-            for i in range(1, pair_points-1):
+            for i in range(1, pair_points - 1):
                 point_dist = i * pair_spacing
                 add_geopoint = point1.nv_geopoint.geo_point(point_dist, azi1)[0]
                 add_point = Point(lat=add_geopoint.latitude_deg, lng=add_geopoint.longitude_deg, i_nv_geopoint=add_geopoint)
@@ -379,4 +380,3 @@ class GoogleApi(object):
                 text = await r.text()
             self.cache_db[id] = text
         return json.loads(text)
-

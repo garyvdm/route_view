@@ -8,7 +8,6 @@ import os
 
 import uvloop
 import yaml
-import aiohttp
 
 import path_view.web_app
 import path_view.core
@@ -55,8 +54,6 @@ defaults_yaml = """
 """
 
 
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('settings_file', action='store', nargs='?', default='/etc/path_view.yaml',
@@ -70,7 +67,6 @@ def main():
     parser.add_argument('--api-key', action='store',
                         help='Google api key. ')
     args = parser.parse_args()
-
 
     defaults = yaml.load(defaults_yaml)
     settings = copy.deepcopy(defaults)
@@ -116,7 +112,6 @@ def main():
     loop.close()
 
 
-
 @contextlib.contextmanager
 def web_serve_cm(loop, settings, google_api):
     app = path_view.web_app.make_aio_app(loop, settings, google_api)
@@ -142,4 +137,3 @@ def web_serve_cm(loop, settings, google_api):
         srv.close()
         loop.run_until_complete(srv.wait_closed())
         loop.run_until_complete(app.finish())
-
