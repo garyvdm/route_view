@@ -133,6 +133,7 @@ def web_serve_cm(loop, settings, google_api):
     try:
         yield
     finally:
+        loop.run_until_complete(path_view.web_app.app_cancel_processing(app))
         loop.run_until_complete(handler.finish_connections(1.0))
         srv.close()
         loop.run_until_complete(srv.wait_closed())

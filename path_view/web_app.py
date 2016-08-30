@@ -7,6 +7,7 @@ import os
 from collections import defaultdict
 from functools import partial
 
+import attr
 from aiohttp import web, MsgType
 from slugify import slugify
 
@@ -44,6 +45,18 @@ def make_aio_app(loop, settings, google_api):
     return app
 
 
+async def app_cancel_processing(app):
+    for path in app['path_view.paths'].values():
+        if path.process_task:
+            path.process_task.cancel()
+    for path in app['path_view.paths'].values():
+        if path.process_task:
+            try:
+                await path.process_task
+            except Exception:
+                pass
+
+
 def add_static_resource(app, resource_name, method, path, *args, **kwargs):
     body = pkg_resources.resource_string('path_view', resource_name)
     body_processor = kwargs.pop('body_processor', None)
@@ -74,7 +87,7 @@ async def upload_path(request):
     path_id = str(uuid.uuid4())
     path_dir_path = os.path.join(app['path_view.settings']['paths_path'], path_id)
     path = Path(id=path_id, name=name, dir_path=path_dir_path,
-                new_pano_callback=partial(new_pano_callback, request.app['path_view.paths_sessions']))
+                change_callback=partial(change_callback, request.app['path_view.paths_sessions'][path_id]))
     app['path_view.paths'][path_id] = path
     await path.load_route_from_gpx(upload_file)
     await path.start_processing(app['path_view.google_api'])
@@ -89,7 +102,7 @@ async def path_ws(request):
     path = request.app['path_view.paths'].get(path_id)
     if path is None:
         path_dir_path = os.path.join(request.app['path_view.settings']['paths_path'], path_id)
-        path = await (Path.load(path_id, path_dir_path, new_pano_callback))
+        path = await (Path.load(path_id, path_dir_path, partial(change_callback, request.app['path_view.paths_sessions'][path_id])))
         request.app['path_view.paths'][path_id] = path
         await path.ensure_data_loaded()
 
@@ -97,7 +110,8 @@ async def path_ws(request):
     path_sessions.append(ws)
 
     # Send initial data.
-    ws.send_str(json.dumps({'panos': path.panos, }, default=json_encode))
+    for msg in path.get_existing_changes():
+        ws.send_str(json.dumps(msg, default=json_encode))
 
     async for msg in ws:
         if msg.tp == MsgType.text:
@@ -111,12 +125,14 @@ async def path_ws(request):
     return ws
 
 
-def new_pano_callback(path_sessions, pano):
-    msg = json.dumps({'panos': [pano], }, default=json_encode)
+def change_callback(path_sessions, change):
+    msg = json.dumps(change, default=json_encode)
     for session in path_sessions:
         session.send_str(msg)
+
+point_json_attrs = {'lat', 'lng'}
 
 
 def json_encode(obj):
     if isinstance(obj, Point):
-        return (obj.lat, obj.lng)
+        return attr.asdict(obj, filter=lambda a, v: a.name in point_json_attrs)

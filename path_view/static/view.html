@@ -1,16 +1,34 @@
 <!DOCTYPE html>
 <html>
   <head>
-      <title>View path</title>
-      <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.1.0/jquery.min.js"></script>
+    <title>View path</title><script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.1.0/jquery.min.js"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?v=3.exp"></script>
+    <script src="/static/view.js"></script>
+    <style>
+      html, body {
+        height: 100%;
+        margin: 0px;
+        padding: 0px
+      }
 
-      <script src="/static/view.js"></script>
+      #map{
+        height: 80%;
+      }
 
+      #panos{
+        float: left;
+        height: 80%;
+      }
 
+      #elevation{
+        height: 20%;
+      }
+    </style>
   </head>
   <body>
     <div id="panos"></div>
-
+    <div id="map"></div>
+    <div id="elevation"></div>
   </body>
 </html>
 

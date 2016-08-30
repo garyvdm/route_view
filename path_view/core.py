@@ -57,19 +57,20 @@ class IndexedPoint(Point):
     index = attr.ib(default=None, )
 
 path_meta_attrs = {'name', 'processing_complete'}
-path_route_attrs = {'route_points', }
+path_route_attrs = {'route_points', 'route_bounds'}
 
 
 @attr.s
 class Path(object):
     id = attr.ib()
     dir_path = attr.ib()
-    new_pano_callback = attr.ib()
+    change_callback = attr.ib()
     name = attr.ib(default=None)
     process_task = attr.ib(default=None, init=False)
     data_loaded = attr.ib(default=False, init=False)
     processing_complete = attr.ib(default=False)
     route_points = attr.ib(default=None, init=False)
+    route_bounds = attr.ib(default=None, init=False)
     panos = attr.ib(default=[], init=False)
     prefered_pano_chain = attr.ib(default={}, init=False)
 
@@ -135,10 +136,26 @@ class Path(object):
             self.process_task.cancel()
             await self.process_task
         self.route_points = points
-        await self.save_route()
+        self.route_bounds = dict(
+            north=max((p.lat for p in self.route_points)),
+            south=min((p.lat for p in self.route_points)),
+            east=max((p.lng for p in self.route_points)),
+            west=min((p.lng for p in self.route_points)),
+        )
         await self.reset_processed()
         self.data_loaded = True
-        self.processing_complete = True
+        self.processing_complete = False
+        self.change_callback({'route_bounds': self.route_bounds})
+        self.change_callback({'route_points': self.route_points})
+        await self.save_route()
+
+    def get_existing_changes(self):
+        if self.route_points:
+            yield {'route_bounds': self.route_bounds}
+            yield {'route_points': self.route_points}
+        print(self.panos)
+        if self.panos:
+            yield {'panos': self.panos}
 
     async def start_processing(self, google_api):
         self.process_task = asyncio.ensure_future(self.process(google_api))
@@ -156,8 +173,10 @@ class Path(object):
     async def reset_processed(self):
         self.panos = []
         await self.save_panos()
+        self.change_callback({'reset': ['panos']})
 
     async def process(self, google_api):
+        self.change_callback({'status': 'Downloading street view image metadata.'})
         # if self.panos:GoogleApi
         #     last_pano = self.panos[-1]
         #     last_point_index = self.route_points[last_pano.closest_point_pair_index]
@@ -176,6 +195,7 @@ class Path(object):
                 if last_pano is None:
                     for point in iter_points_with_minimal_spacing([last_point] + self.route_points[last_point_index + 1:],
                                                                   spacing=10):
+                        logging.debug("Get pano at {} ".format(point))
                         pano_data = await google_api.get_pano_ll(point)
                         if pano_data:
                             break
@@ -226,7 +246,7 @@ class Path(object):
                         last_pano = pano
                         last_point_index = point_pair[0].index
                         last_point = c_point
-                        self.new_pano_callback(pano)
+                        self.change_callback({'panos': [pano]})
                         logging.info("{description} ({point.lat},{point.lng}) {i}".format(**pano))
                         if len(self.panos) % 100 == 0:
                             if last_save_task:
@@ -236,6 +256,7 @@ class Path(object):
                     break
             self.processing_complete = True
             await asyncio.shield(self.save_metadata())
+            self.change_callback({'status': 'Compleate'})
         finally:
             if last_save_task:
                 await asyncio.shield(last_save_task)
@@ -356,15 +377,15 @@ class GoogleApi(object):
                 r.raise_for_status()
                 text = await r.text()
             data = json.loads(text)
-            id = data['Location']['panoId']
-            self.cache_db[key] = id
-            if id not in self.cache_db:
-                self.cache_db[id] = text
+            if data:
+                id = data['Location']['panoId']
+                self.cache_db[key] = id
+                if id not in self.cache_db:
+                    self.cache_db[id] = text
             return data
         else:
-            return await self.get_pano_id(id)
+            return (await self.get_pano_id(id))
 
-    @functools.lru_cache()
     async def get_pano_id(self, id):
         try:
             text = self.cache_db[id]
