@@ -1,12 +1,11 @@
 import logging
 import hashlib
 import json
-from functools import partial
-
 import pkg_resources
 import uuid
 import os
-import asyncio
+from collections import defaultdict
+from functools import partial
 
 from aiohttp import web, MsgType
 from slugify import slugify
@@ -20,8 +19,7 @@ def make_aio_app(loop, settings, google_api):
     app['path_view.google_api'] = google_api
     app['path_view.static_etags'] = {}
     app['path_view.paths'] = {}
-    app['path_view.paths_process_tasks'] = {}
-    app['path_view.paths_sessions'] = {}
+    app['path_view.paths_sessions'] = defaultdict(list)
 
     if settings['debugtoolbar']:
         try:
@@ -34,13 +32,14 @@ def make_aio_app(loop, settings, google_api):
     add_static_resource(
         app, 'static/upload_form.html', 'GET', '/',
         content_type='text/html', charset='utf8',)
-    app.router.add_route('POST', '/upload', upload_path)
     add_static_resource(
         app, 'static/view.html', 'GET', '/view/{path_id}/',
         content_type='text/html', charset='utf8',)
     add_static_resource(
         app, 'static/view.js', 'GET', '/static/view.js',
         content_type='application/javascript', charset='utf8',)
+
+    app.router.add_route('POST', '/upload', upload_path)
     app.router.add_route('*', '/path_sock/{path_id}/', handler=path_ws, name='path_ws')
     return app
 
@@ -70,19 +69,16 @@ def add_static_resource(app, resource_name, method, path, *args, **kwargs):
 async def upload_path(request):
     data = await request.post()
     upload_file = data['gpx'].file.read()
+    name = data['gpx'].filename
     app = request.app
     path_id = str(uuid.uuid4())
     path_dir_path = os.path.join(app['path_view.settings']['paths_path'], path_id)
-    sessions = []
-    request.app['path_view.paths_sessions'][path_id] = sessions
-    path = Path(id=path_id, dir_path=path_dir_path,
-                google_api=app['path_view.google_api'],
-                new_pano_callback=partial(new_pano_callback, sessions))
+    path = Path(id=path_id, name=name, dir_path=path_dir_path,
+                new_pano_callback=partial(new_pano_callback, request.app['path_view.paths_sessions']))
     app['path_view.paths'][path_id] = path
-    set_process_task(request.app, path_id, path.process_upload(upload_file))
+    await path.load_route_from_gpx(upload_file)
+    await path.start_processing(app['path_view.google_api'])
     return web.HTTPFound('/view/{}/'.format(path_id))
-
-
 
 
 async def path_ws(request):
@@ -90,7 +86,13 @@ async def path_ws(request):
     await ws.prepare(request)
 
     path_id = request.match_info['path_id']
-    path = request.app['path_view.paths'][path_id]
+    path = request.app['path_view.paths'].get(path_id)
+    if path is None:
+        path_dir_path = os.path.join(request.app['path_view.settings']['paths_path'], path_id)
+        path = await (Path.load(path_id, path_dir_path, new_pano_callback))
+        request.app['path_view.paths'][path_id] = path
+        await path.ensure_data_loaded()
+
     path_sessions = request.app['path_view.paths_sessions'][path_id]
     path_sessions.append(ws)
 
@@ -109,23 +111,6 @@ async def path_ws(request):
             raise ws.exception()
     return ws
 
-
-
-def set_process_task(app, path_id, process_task):
-    process_task = asyncio.ensure_future(process_task)
-    paths_process_tasks = app['path_view.paths_process_tasks']
-    assert path_id not in paths_process_tasks
-    paths_process_tasks[path_id] = process_task
-    sessions = app['path_view.paths_sessions'][path_id]
-    process_task.add_done_callback(partial(process_task_done_callback, sessions))
-
-
-def process_task_done_callback(path_sessions, fut):
-    try:
-        fut.result()
-        logging.info("Done processing.")
-    except Exception as e:
-        logging.exception("Error processing: ")
 
 
 def new_pano_callback(path_sessions, pano):

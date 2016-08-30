@@ -55,11 +55,18 @@ class TestPointProcess(unittest.TestCase):
             def new_pano_callback(pano):
                 pass
 
-            path = Path(None, tempdir, api, new_pano_callback)
-            path.route_points = [
+            path = Path(None, tempdir, new_pano_callback, name='Test Path', )
+            await path.set_route_points([
                 IndexedPoint(lat=-26.09332, lng=27.9812, index=0),
                 IndexedPoint(lat=-26.09326, lng=27.98112, index=1),
                 IndexedPoint(lat=-26.09264, lng=27.97940, index=2),
-            ]
-            await path.process()
+            ])
+            await path.start_processing(api)
+            await path.process_task
+            self.assertTrue(path.processing_complete)
+
+            loaded_path = await Path.load(None, tempdir, new_pano_callback)
+            await loaded_path.ensure_data_loaded()
+            self.assertEqual(path.route_points, loaded_path.route_points)
+            self.assertEqual(path.panos, loaded_path.panos)
 
