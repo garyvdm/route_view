@@ -113,22 +113,27 @@ async def path_ws(request):
     for msg in path.get_existing_changes():
         ws.send_str(json.dumps(msg, default=json_encode))
 
-    async for msg in ws:
-        if msg.tp == MsgType.text:
-            if msg.data == 'close':
-                await ws.close()
-                path_sessions.remove(ws)
-            else:
-                pass
-        elif msg.tp == MsgType.error:
-            raise ws.exception()
+    try:
+        async for msg in ws:
+            if msg.tp == MsgType.text:
+                if msg.data == 'close':
+                    await ws.close()
+                else:
+                    pass
+            elif msg.tp == MsgType.error:
+                raise ws.exception()
+    finally:
+        path_sessions.remove(ws)
     return ws
 
 
 def change_callback(path_sessions, change):
     msg = json.dumps(change, default=json_encode)
     for session in path_sessions:
-        session.send_str(msg)
+        try:
+            session.send_str(msg)
+        except:
+            logging.exception('Error sending to client: ')
 
 point_json_attrs = {'lat', 'lng'}
 

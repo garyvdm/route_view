@@ -11,6 +11,7 @@ from path_view.core import (
     Path,
     find_closest_point_pair,
     iter_points_with_minimal_spacing,
+    point_from_distance_on_path,
     GoogleApi,
 )
 
@@ -19,7 +20,7 @@ class TestHelpers(unittest.TestCase):
 
     def test_find_closest_point_pair(self):
         points = [Point(0, 0), Point(0, 30), Point(0, 60), Point(0, 90), Point(0, 120)]
-        closest_point_pair, cpoint, distance = find_closest_point_pair(points, Point(0.0001, 45))
+        closest_point_pair, cpoint, dist = find_closest_point_pair(points, Point(0.0001, 45))
         self.assertEqual(closest_point_pair, (Point(0, 30), Point(0, 60)))
         self.assertEqual(cpoint, Point(0, 45))
 
@@ -37,6 +38,11 @@ class TestHelpers(unittest.TestCase):
         points = [Point(0, 0), Point(0, 0.0000001)]
         points_with_minimal_spacing = list(iter_points_with_minimal_spacing(points, spacing=4000))
         self.assertEqual(len(points_with_minimal_spacing), 2)
+
+    def test_point_from_distance_on_path(self):
+        path = [Point(0, 0), Point(0, 0.0001), Point(0.0001, 0.0001)]
+        self.assertEqual(point_from_distance_on_path(path, 10), Point(lat=0.0, lng=8.983152841195216e-05))
+        self.assertEqual(point_from_distance_on_path(path, 20), Point(lat=8.019994573584536e-05, lng=0.0001))
 
 
 class TestPointProcess(unittest.TestCase):

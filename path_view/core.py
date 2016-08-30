@@ -8,18 +8,19 @@ import xml.etree.ElementTree as xml
 import aiohttp
 import attr
 import unqlite
+import geographiclib.geodesic
 from nvector import (
-    FrameE,
     unit,
-    deg,
+    lat_lon2n_E,
+    n_E2lat_lon,
 )
 from numpy import (
     cross,
     dot,
     arccos,
+    deg2rad,
+    rad2deg,
 )
-
-wgs84 = FrameE(name='WGS84')
 
 
 def runs_in_executor(fn):
@@ -36,20 +37,6 @@ def runs_in_executor(fn):
 class Point(object):
     lat = attr.ib()
     lng = attr.ib()
-    i_nv_geopoint = attr.ib(default=None, cmp=False, hash=False, repr=False)
-    i_nv = attr.ib(default=None, cmp=False, hash=False, repr=False)
-
-    @property
-    def nv_geopoint(self):
-        if not self.i_nv_geopoint:
-            self.i_nv_geopoint = wgs84.GeoPoint(latitude=self.lat, longitude=self.lng, degrees=True)
-        return self.i_nv_geopoint
-
-    @property
-    def nv(self):
-        if not self.i_nv:
-            self.i_nv = self.nv_geopoint.to_nvector()
-        return self.i_nv
 
 
 @attr.s(slots=True)
@@ -153,7 +140,6 @@ class Path(object):
         if self.route_points:
             yield {'route_bounds': self.route_bounds}
             yield {'route_points': self.route_points}
-        print(self.panos)
         if self.panos:
             yield {'panos': self.panos}
 
@@ -195,6 +181,8 @@ class Path(object):
                 if last_pano is None:
                     for point in iter_points_with_minimal_spacing([last_point] + self.route_points[last_point_index + 1:],
                                                                   spacing=10):
+                        if point != self.route_points[0] and (point == last_point or distance_and_azimuth(point, last_point)[0] < 5):
+                            continue
                         logging.debug("Get pano at {} ".format(point))
                         pano_data = await google_api.get_pano_ll(point)
                         if pano_data:
@@ -205,16 +193,11 @@ class Path(object):
                     if last_pano['id'] in self.prefered_pano_chain:
                         link_pano_id = self.prefered_pano_chain[last_pano['id']]
                     else:
-                        # if last_point_index == len(points_indexed) -1 :
-                        #     break
-
-                        point1 = self.route_points[last_point_index]
-                        point2 = self.route_points[last_point_index + 1]
-                        yaw_to_next = deg(point1.nv_geopoint.distance_and_azimuth(point2.nv_geopoint)[1])
+                        yaw_to_next = get_azimuth_to_distance_on_path(last_point, self.route_points[last_point_index + 1:], 10)
                         yaw_diff = lambda item: abs(deg_wrap_to_closest(item['yaw'] - yaw_to_next, 0))
                         pano_link = min(last_pano['links'], key=yaw_diff)
 
-                        if yaw_diff(pano_link) > 20:
+                        if yaw_diff(pano_link) > 15:
                             logging.debug("Yaw too different: {} {} {}".format(yaw_diff(pano_link), pano_link['yaw'], yaw_to_next))
                             link_pano_id = None
                         else:
@@ -236,7 +219,7 @@ class Path(object):
                                       .format(dist, location['panoId']))
                         last_pano = None
                     else:
-                        heading = deg(point_pair[0].nv_geopoint.distance_and_azimuth(point_pair[1].nv_geopoint)[1])
+                        heading = get_azimuth_to_distance_on_path(c_point, self.route_points[point_pair[1].index:], 20)
                         links = [dict(panoId=link['panoId'], yaw=float(link['yawDeg']))
                                  for link in pano_data['Links']]
                         pano = dict(
@@ -281,42 +264,42 @@ def pairs(items):
 
 
 def find_closest_point_pair(points, to_point, req_min_dist=20, stop_after_dist=100):
-    tpn = to_point.nv.normal
+    tpn = lat_lon2n_E(deg2rad(to_point.lat), deg2rad(to_point.lng))
     min_distance = None
     min_point_pair = None
     min_c_point = None
     for point1, point2 in pairs(points):
-        p1 = point1.nv.normal
-        p2 = point2.nv.normal
+        p1 = lat_lon2n_E(deg2rad(point1.lat), deg2rad(point1.lng))
+        p2 = lat_lon2n_E(deg2rad(point2.lat), deg2rad(point2.lng))
         c12 = cross(p1, p2, axis=0)
         ctp = cross(tpn, c12, axis=0)
-        c = unit(cross(ctp, c12, axis=0)).reshape((3, ))
-
+        c = unit(cross(ctp, c12, axis=0))
         p1h = p1.reshape((3, ))
         p2h = p2.reshape((3, ))
         dp1p2 = arccos(dot(p1h, p2h))
 
         sutable_c = None
         for co in (c, 0 - c):
-            dp1co = arccos(dot(p1h, co))
-            dp2co = arccos(dot(p2h, co))
+            co_rs = co.reshape((3, ))
+            dp1co = arccos(dot(p1h, co_rs))
+            dp2co = arccos(dot(p2h, co_rs))
             if abs(dp1co + dp2co - dp1p2) < 0.000001:
                 sutable_c = co
                 break
 
         if sutable_c is not None:
-            c_geopoint = wgs84.Nvector(sutable_c.reshape((3, 1))).to_geo_point()
-            c_point = Point(lat=c_geopoint.latitude_deg[0], lng=c_geopoint.longitude_deg[0], i_nv_geopoint=c_geopoint)
-            distance = to_point.nv_geopoint.distance_and_azimuth(c_geopoint)[0]
+            c_point_lat, c_point_lng = n_E2lat_lon(sutable_c)
+            c_point = Point(lat=rad2deg(c_point_lat[0]), lng=rad2deg(c_point_lng[0]))
+            c_dist = distance(to_point, c_point)
         else:
-            distance, c_point = min(((to_point.nv_geopoint.distance_and_azimuth(p.nv_geopoint)[0], p) for p in (point1, point2)))
+            c_dist, c_point = min(((distance(to_point, p), p) for p in (point1, point2)))
 
-        if min_distance is None or distance < min_distance:
-            min_distance = distance
+        if min_distance is None or c_dist < min_distance:
+            min_distance = c_dist
             min_point_pair = (point1, point2)
             min_c_point = c_point
 
-        if min_distance < req_min_dist and distance > stop_after_dist:
+        if min_distance < req_min_dist and c_dist > stop_after_dist:
             break
 
     return min_point_pair, min_c_point, min_distance
@@ -325,16 +308,47 @@ def find_closest_point_pair(points, to_point, req_min_dist=20, stop_after_dist=1
 def iter_points_with_minimal_spacing(points, spacing=10):
     for point1, point2 in pairs(points):
         yield point1
-        dist, azi1, azi2 = point1.nv_geopoint.distance_and_azimuth(point2.nv_geopoint)
+        dist, azi = distance_and_azimuth(point1, point2)
         pair_points = round(dist / spacing)
         if pair_points:
             pair_spacing = dist / pair_points
             for i in range(1, pair_points - 1):
-                point_dist = i * pair_spacing
-                add_geopoint = point1.nv_geopoint.geo_point(point_dist, azi1)[0]
-                add_point = Point(lat=add_geopoint.latitude_deg, lng=add_geopoint.longitude_deg, i_nv_geopoint=add_geopoint)
-                yield add_point
+                yield point_from_distance_and_azimuth(point1, i * pair_spacing, azi)
     yield point2
+
+
+geodesic = geographiclib.geodesic.Geodesic.WGS84
+
+
+def distance(point1, point2):
+    return geodesic.Inverse(point1.lat, point1.lng, point2.lat, point2.lng)['s12']
+
+
+def distance_and_azimuth(point1, point2):
+    geo = geodesic.Inverse(point1.lat, point1.lng, point2.lat, point2.lng)
+    return geo['s12'], geo['azi1']
+
+
+def point_from_distance_and_azimuth(point, distance, azimuth):
+    geo = geodesic.Direct(point.lat, point.lng, azimuth, distance)
+    return Point(lat=geo['lat2'], lng=geo['lon2'])
+
+
+def point_from_distance_on_path(path, dist):
+    distance_covered = 0
+    for point1, point2, in pairs(path):
+        pair_distance, pair_azimuth = distance_and_azimuth(point1, point2)
+        if distance_covered + pair_distance < dist:
+            distance_covered += pair_distance
+        else:
+            return point_from_distance_and_azimuth(point1, dist - distance_covered, pair_azimuth)
+
+
+def get_azimuth_to_distance_on_path(from_point, path, dist):
+    to_point = point_from_distance_on_path([from_point] + path, dist)
+    if to_point is None:
+        to_point = path[-1]
+    return geodesic.Inverse(from_point.lat, from_point.lng, to_point.lat, to_point.lng)['azi1']
 
 
 latlng_urlstr = lambda point: "{},{}".format(point.lat, point.lng)
