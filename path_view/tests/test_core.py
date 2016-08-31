@@ -47,9 +47,8 @@ class TestHelpers(unittest.TestCase):
 
 class TestPointProcess(unittest.TestCase):
 
-    @unittest_run_loop
-    async def test_process(self):
-
+    @contextlib.contextmanager
+    def process_stack(self):
         with contextlib.ExitStack() as stack:
             try:
                 api_key = os.environ['PATHVIEW_TEST_APIKEY']
@@ -58,10 +57,15 @@ class TestPointProcess(unittest.TestCase):
             api = stack.enter_context(GoogleApi(api_key, ':mem:', asyncio.get_event_loop()))
             tempdir = stack.enter_context(tempfile.TemporaryDirectory())
 
-            def new_pano_callback(pano):
+            def change_callback(pano):
                 pass
 
-            path = Path(None, tempdir, new_pano_callback, name='Test Path', )
+            yield api, tempdir, change_callback
+
+    @unittest_run_loop
+    async def test_process1(self):
+        with self.process_stack() as (api, tempdir, change_callback):
+            path = Path(None, tempdir, change_callback, name='Test Path', )
             await path.set_route_points([
                 IndexedPoint(lat=-26.09332, lng=27.9812, index=0),
                 IndexedPoint(lat=-26.09326, lng=27.98112, index=1),
@@ -71,7 +75,22 @@ class TestPointProcess(unittest.TestCase):
             await path.process_task
             self.assertTrue(path.processing_complete)
 
-            loaded_path = await Path.load(None, tempdir, new_pano_callback)
+            loaded_path = await Path.load(None, tempdir, change_callback)
             await loaded_path.ensure_data_loaded()
             self.assertEqual(path.route_points, loaded_path.route_points)
             self.assertEqual(path.panos, loaded_path.panos)
+
+    @unittest_run_loop
+    async def test_process2(self):
+        # This path would go into an infinate loop at the end. Test to make sure it finishes.
+
+        with self.process_stack() as (api, tempdir, change_callback):
+            path = Path(None, tempdir, change_callback, name='Test Path', )
+            await path.set_route_points([
+                IndexedPoint(lat=45.03778, lng=6.92901, index=0),
+                IndexedPoint(lat=45.0379, lng=6.92922, index=1),
+                IndexedPoint(lat=45.03795, lng=6.92929, index=2)
+            ])
+            await path.start_processing(api)
+            await path.process_task
+            self.assertTrue(path.processing_complete)

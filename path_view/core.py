@@ -193,6 +193,8 @@ class Path(object):
                     if last_pano['id'] in self.prefered_pano_chain:
                         link_pano_id = self.prefered_pano_chain[last_pano['id']]
                     else:
+                        if last_point_index + 2 == len(self.route_points) and distance(last_point, self.route_points[-1]) < 10:
+                            break
                         yaw_to_next = get_azimuth_to_distance_on_path(last_point, self.route_points[last_point_index + 1:], 10)
                         yaw_diff = lambda item: abs(deg_wrap_to_closest(item['yaw'] - yaw_to_next, 0))
                         pano_link = min(last_pano['links'], key=yaw_diff)
