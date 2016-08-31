@@ -30,9 +30,13 @@ $(document).ready(function() {
     var path_id = split_path_name[split_path_name.length - 2];
     var ws = new WebSocket('ws://' + location.host + '/path_sock/' + path_id + '/');
     var panos = []
+    var api_key = ''
 
     ws.onmessage = function(e) {
         var data = $.parseJSON(e.data);
+        if (data.hasOwnProperty('api_key')) {
+            api_key = '&key=' + data.api_key
+        }
         if (data.hasOwnProperty('route_bounds')) {
             map.fitBounds(data['route_bounds'])
         }
@@ -64,7 +68,7 @@ $(document).ready(function() {
     function load_pano(pano){
 
         pano.image = new Image()
-        pano.image.src = 'https://maps.googleapis.com/maps/api/streetview?size=640x480&pano=' + pano.id + '&heading=' + pano.heading + '&sensor=false&fov=110'
+        pano.image.src = 'https://maps.googleapis.com/maps/api/streetview?size=640x480&pano=' + pano.id + '&heading=' + pano.heading + '&sensor=false&fov=110' + api_key
         num_panos_loading++;
         pano.image.onload = function(){
             num_panos_loading--;

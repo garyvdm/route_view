@@ -110,6 +110,7 @@ async def path_ws(request):
     path_sessions.append(ws)
 
     # Send initial data.
+    ws.send_str(json.dumps({'api_key': request.app['path_view.google_api'].api_key}))
     for msg in path.get_existing_changes():
         ws.send_str(json.dumps(msg, default=json_encode))
 
