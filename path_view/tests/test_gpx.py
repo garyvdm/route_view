@@ -19,7 +19,9 @@ class TestGpx(unittest.TestCase):
             </gpx>
         """).lstrip('\n')
         points = gpx_get_points(gpx)
-        expected_points = [IndexedPoint(lat=-26.09321, lng=27.98130, index=0),
-                           IndexedPoint(lat=-26.09330, lng=27.98154, index=1),
-                           IndexedPoint(lat=-26.09341, lng=27.98186, index=2)]
+        expected_points = [
+            IndexedPoint(lat=-26.09321, lng=27.98130, index=0, distance=0),
+            IndexedPoint(lat=-26.09330, lng=27.98154, index=1, distance=25.99741939049353),
+            IndexedPoint(lat=-26.09341, lng=27.98186, index=2, distance=60.25098280725716),
+        ]
         self.assertEqual(points, expected_points)

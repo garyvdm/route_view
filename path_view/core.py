@@ -3,6 +3,7 @@ import logging
 import json
 import functools
 import asyncio
+import itertools
 import xml.etree.ElementTree as xml
 
 import aiohttp
@@ -38,13 +39,22 @@ class Point(object):
     lat = attr.ib()
     lng = attr.ib()
 
+    def to_point(self):
+        return self
+
 
 @attr.s(slots=True)
 class IndexedPoint(Point):
-    index = attr.ib(default=None, )
+    index = attr.ib(default=None)
+    distance = attr.ib(default=None)
 
-path_meta_attrs = {'name', 'processing_complete'}
+    def to_point(self):
+        return Point(self.lat, self.lng)
+
+
+path_meta_attrs = {'name'}
 path_route_attrs = {'route_points', 'route_bounds'}
+path_status_attrs = {'processing_at', 'processing_complete'}
 
 
 @attr.s
@@ -60,6 +70,7 @@ class Path(object):
     route_bounds = attr.ib(default=None, init=False)
     panos = attr.ib(default=[], init=False)
     prefered_pano_chain = attr.ib(default={}, init=False)
+    processing_at = attr.ib(default=None, init=False)
 
     @classmethod
     @runs_in_executor
@@ -74,13 +85,24 @@ class Path(object):
         if not self.data_loaded:
             with open(os.path.join(self.dir_path, 'route.json'), 'r') as f:
                 route = json.load(f)
-            route['route_points'] = [IndexedPoint(*point, index=i) for i, point in enumerate(route['route_points'])]
-            for k, v in route.items():
+            route['route_points'] = path_with_distance_and_index(route['route_points'])
+
+            with open(os.path.join(self.dir_path, 'status.json'), 'r') as f:
+                status = json.load(f)
+            if status['processing_at']:
+                status['processing_at']['point'] = Point(*status['processing_at']['point'])
+
+            for k, v in itertools.chain(route.items(), status.items()):
                 setattr(self, k, v)
+
             with open(os.path.join(self.dir_path, 'panos.json'), 'r') as f:
                 self.panos = json.load(f)
             for pano in self.panos:
-                pano['point'] = Point(*pano['point'])
+                if pano['type'] == 'pano':
+                    pano['point'] = Point(*pano['point'])
+                if pano['type'] == 'no_images':
+                    pano['start_point'] = Point(*pano['start_point'])
+                    pano['end_point'] = Point(*pano['end_point'])
 
             self.data_loaded = True
 
@@ -102,7 +124,18 @@ class Path(object):
             json.dump(self, f, default=json_encode)
 
     @runs_in_executor
-    def save_panos(self):
+    def save_processing(self):
+        # State
+        def json_encode(obj):
+            if isinstance(obj, Point):
+                return (obj.lat, obj.lng)
+            if isinstance(obj, Path):
+                return attr.asdict(obj, recurse=False, filter=lambda a, v: a.name in path_status_attrs)
+
+        with open(os.path.join(self.dir_path, 'status.json'), 'w') as f:
+            json.dump(self, f, default=json_encode)
+
+        # Panos
         def json_encode(obj):
             if isinstance(obj, Point):
                 return (obj.lat, obj.lng)
@@ -142,6 +175,8 @@ class Path(object):
             yield {'route_points': self.route_points}
         if self.panos:
             yield {'panos': self.panos}
+        if self.processing_at:
+            yield {'processing_at': self.processing_at}
 
     async def start_processing(self, google_api):
         self.process_task = asyncio.ensure_future(self.process(google_api))
@@ -158,12 +193,13 @@ class Path(object):
 
     async def reset_processed(self):
         self.panos = []
-        await self.save_panos()
+        await self.save_processing()
         self.change_callback({'reset': ['panos']})
 
     async def process(self, google_api):
         self.change_callback({'status': 'Downloading street view image metadata.'})
-        # if self.panos:GoogleApi
+
+        # if self.panos:
         #     last_pano = self.panos[-1]
         #     last_point_index = self.route_points[last_pano.closest_point_pair_index]
         # else:
@@ -172,21 +208,65 @@ class Path(object):
         last_pano = None
         last_point = self.route_points[0]
         last_point_index = 0
-
+        last_at_distance = 0
         last_save_task = None
+        last_pano_data = None
+        panos_length_at_last_save = 0
+        no_pano_link = True
+
+        new_panos = []
+        processing_at = {
+            'point': last_point,
+            'index': last_point_index,
+            'distance': last_at_distance,
+            'no_images_from': None
+        }
+
+        async def send_changes():
+            nonlocal new_panos
+            while True:
+                await asyncio.sleep(0.2)
+                if new_panos or self.processing_at != processing_at:
+                    self.panos.extend(new_panos)
+                    self.processing_at = processing_at
+                    self.change_callback({
+                        'panos': new_panos,
+                        'processing_at': processing_at
+                    })
+                    new_panos = []
+
+                if self.processing_complete:
+                    break
+
+        send_changes_task = asyncio.ensure_future(send_changes())
 
         try:
 
             while True:
-                if last_pano is None:
+                if no_pano_link:
+                    current_point_index = last_point_index
                     for point in iter_points_with_minimal_spacing([last_point] + self.route_points[last_point_index + 1:],
-                                                                  spacing=10):
+                                                                  spacing=20):
+                        if isinstance(point, IndexedPoint):
+                            current_point_index = point.index
+
                         if point != self.route_points[0] and (point == last_point or distance_and_azimuth(point, last_point)[0] < 5):
                             continue
                         logging.debug("Get pano at {} ".format(point))
                         pano_data = await google_api.get_pano_ll(point)
                         if pano_data:
-                            break
+                            if last_pano and pano_data['Location']['panoId'] == last_pano['id']:
+                                continue
+                            else:
+                                no_pano_link = False
+                                break
+                        else:
+                            processing_at = {
+                                'point': point,
+                                'index': current_point_index,
+                                'distance': last_at_distance,
+                                'no_images_from': {'point': last_point, 'index': last_point_index},
+                            }
                     else:
                         break
                 else:
@@ -196,19 +276,20 @@ class Path(object):
                         if last_point_index + 2 == len(self.route_points) and distance(last_point, self.route_points[-1]) < 10:
                             break
                         yaw_to_next = get_azimuth_to_distance_on_path(last_point, self.route_points[last_point_index + 1:], 10)
-                        yaw_diff = lambda item: abs(deg_wrap_to_closest(item['yaw'] - yaw_to_next, 0))
-                        pano_link = min(last_pano['links'], key=yaw_diff)
+                        yaw_diff = lambda item: abs(deg_wrap_to_closest(float(item['yawDeg']) - yaw_to_next, 0))
+                        pano_link = min(last_pano_data['Links'], key=yaw_diff)
 
                         if yaw_diff(pano_link) > 15:
-                            logging.debug("Yaw too different: {} {} {}".format(yaw_diff(pano_link), pano_link['yaw'], yaw_to_next))
+                            logging.debug("Yaw too different: {} {} {}".format(yaw_diff(pano_link), pano_link['yawDeg'], yaw_to_next))
                             link_pano_id = None
                         else:
                             link_pano_id = pano_link['panoId']
 
                     if link_pano_id:
+                        no_pano_link = False
                         pano_data = await google_api.get_pano_id(link_pano_id)
                     else:
-                        last_pano = None
+                        no_pano_link = True
                         pano_data = None
 
                 if pano_data:
@@ -216,36 +297,69 @@ class Path(object):
                     pano_point = Point(lat=float(location['lat']), lng=float(location['lng']))
                     point_pair, c_point, dist = find_closest_point_pair(self.route_points[last_point_index:], pano_point)
 
-                    if dist > 30:
+                    if dist > 15:
                         logging.debug("Distance {} to nearest point too great for pano: {}"
                                       .format(dist, location['panoId']))
                         last_pano = None
                     else:
                         heading = get_azimuth_to_distance_on_path(c_point, self.route_points[point_pair[1].index:], 20)
-                        links = [dict(panoId=link['panoId'], yaw=float(link['yawDeg']))
-                                 for link in pano_data['Links']]
+                        c_point_dist = point_pair[0].distance + distance(point_pair[0], c_point)
+
+                        if c_point_dist - last_at_distance > 100:
+                            new_panos.append(dict(
+                                type='no_images',
+                                start_point=last_point.to_point(), start_index=last_point_index + 1,
+                                end_point=c_point.to_point(), end_index=point_pair[0].index,
+                                start_distance=last_at_distance + 1, end_distance=c_point_dist - 1,
+                            ))
+
                         pano = dict(
-                            id=location['panoId'], point=pano_point,
-                            description=location['description'], links=links, i=last_point_index, heading=heading)
-                        self.panos.append(pano)
+                            type='pano', id=location['panoId'], point=pano_point,
+                            description=location['description'], i=last_point_index, heading=heading,
+                            at_distance=c_point_dist)
+                        new_panos.append(pano)
                         last_pano = pano
+                        last_pano_data = pano_data
                         last_point_index = point_pair[0].index
                         last_point = c_point
-                        self.change_callback({'panos': [pano]})
-                        logging.info("{description} ({point.lat},{point.lng}) {i}".format(**pano))
-                        if len(self.panos) % 100 == 0:
+                        last_at_distance = c_point_dist
+
+                        processing_at = {
+                            'point': last_point,
+                            'index': last_point_index,
+                            'distance': last_at_distance,
+                            'no_images_from': None,
+                        }
+
+                        if len(self.panos) - panos_length_at_last_save > 100:
                             if last_save_task:
                                 await asyncio.shield(last_save_task)
-                            last_save_task = asyncio.ensure_future(self.save_panos())
+                            last_save_task = asyncio.ensure_future(self.save_processing())
+
                 if last_point == self.route_points[-1]:
                     break
+
+            if self.route_points[-1].distance - last_at_distance > 100:
+                new_panos.append(dict(
+                    type='no_images',
+                    start_point=last_point.to_point(), start_index=last_point_index + 1,
+                    end_point=self.route_points[-1].to_point(), end_index=len(self.route_points) - 2,
+                    start_distance=last_pano['at_distance'] + 1, end_distance=self.route_points[-1].distance,
+                ))
+
             self.processing_complete = True
-            await asyncio.shield(self.save_metadata())
-            self.change_callback({'status': 'Compleate'})
+            processing_at = {
+                'point': self.route_points[-1],
+                'index': self.route_points[-1].index,
+                'distance': self.route_points[-1].distance,
+                'no_images_from': None,
+            }
+            await send_changes_task
+            self.change_callback({'status': 'Complete'})
         finally:
             if last_save_task:
                 await asyncio.shield(last_save_task)
-            await asyncio.shield(self.save_panos())
+            await asyncio.shield(self.save_processing())
 
 
 gpx_ns = {
@@ -256,9 +370,25 @@ gpx_ns = {
 def gpx_get_points(gpx):
     doc = xml.fromstring(gpx)
     trkpts = doc.findall('./gpx11:trk/gpx11:trkseg/gpx11:trkpt', gpx_ns)
-    points = [IndexedPoint(lat=float(trkpt.attrib['lat']), lng=float(trkpt.attrib['lon']), index=i)
-              for i, trkpt in enumerate(trkpts)]
+    points = path_with_distance_and_index((float(trkpt.attrib['lat']), float(trkpt.attrib['lon'])) for trkpt in trkpts)
     return points
+
+
+def path_with_distance_and_index(path):
+    dist = 0
+    previous_point = None
+
+    def get_point(i, point):
+        nonlocal dist
+        nonlocal previous_point
+        point = IndexedPoint(*point, index=i)
+        if previous_point:
+            dist += distance(previous_point, point)
+        point.distance = dist
+        previous_point = point
+        return point
+
+    return [get_point(i, point) for i, point in enumerate(path)]
 
 
 def pairs(items):
@@ -377,7 +507,7 @@ class GoogleApi(object):
         self.session.close()
         self.cache_db.close()
 
-    async def get_pano_ll(self, point, radius=10):
+    async def get_pano_ll(self, point, radius=15):
         key = 'll{:=+3.8f}{:=+3.8f}-{}'.format(point.lat, point.lng, radius)
         try:
             id = self.cache_db[key]
@@ -405,6 +535,8 @@ class GoogleApi(object):
     async def get_pano_id(self, id):
         try:
             text = self.cache_db[id]
+            # If the whole route is cached, we may end up blocking for a long time. quick sleep so we don't
+            await asyncio.sleep(0)
         except KeyError:
             async with self.session.get(
                     'http://cbks0.googleapis.com/cbk',
