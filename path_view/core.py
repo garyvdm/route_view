@@ -4,12 +4,14 @@ import json
 import functools
 import asyncio
 import itertools
+import threading
 import xml.etree.ElementTree as xml
 
 import aiohttp
 import attr
 import unqlite
 import geographiclib.geodesic
+import msgpack
 from nvector import (
     unit,
     lat_lon2n_E,
@@ -71,6 +73,8 @@ class Path(object):
     panos = attr.ib(default=[], init=False)
     prefered_pano_chain = attr.ib(default={}, init=False)
     processing_at = attr.ib(default=None, init=False)
+    panos_len_at_last_save = attr.ib(default=0, init=False)
+    save_processing_lock = attr.ib(default=attr.Factory(threading.Lock), init=False)
 
     @classmethod
     @runs_in_executor
@@ -83,8 +87,9 @@ class Path(object):
     def ensure_data_loaded(self):
         # TODO resume processing if not complete
         if not self.data_loaded:
-            with open(os.path.join(self.dir_path, 'route.json'), 'r') as f:
-                route = json.load(f)
+            with open(os.path.join(self.dir_path, 'route.pack'), 'rb') as f:
+                route = msgpack.unpack(f, encoding='utf-8')
+            print(route)
             route['route_points'] = path_with_distance_and_index(route['route_points'])
 
             with open(os.path.join(self.dir_path, 'status.json'), 'r') as f:
@@ -95,14 +100,21 @@ class Path(object):
             for k, v in itertools.chain(route.items(), status.items()):
                 setattr(self, k, v)
 
-            with open(os.path.join(self.dir_path, 'panos.json'), 'r') as f:
-                self.panos = json.load(f)
-            for pano in self.panos:
+            panos = []
+            with open(os.path.join(self.dir_path, 'panos.pack'), 'rb') as f:
+                unpacker = msgpack.Unpacker(f, encoding='utf-8')
+                while True:
+                    try:
+                        panos.append(unpacker.unpack())
+                    except msgpack.OutOfData:
+                        break
+            for pano in panos:
                 if pano['type'] == 'pano':
                     pano['point'] = Point(*pano['point'])
                 if pano['type'] == 'no_images':
                     pano['start_point'] = Point(*pano['start_point'])
                     pano['end_point'] = Point(*pano['end_point'])
+            self.panos = panos
 
             self.data_loaded = True
 
@@ -120,29 +132,37 @@ class Path(object):
             if isinstance(obj, Path):
                 return attr.asdict(obj, recurse=False, filter=lambda a, v: a.name in path_route_attrs)
 
-        with open(os.path.join(self.dir_path, 'route.json'), 'w') as f:
-            json.dump(self, f, default=json_encode)
+        with open(os.path.join(self.dir_path, 'route.pack'), 'wb') as f:
+            msgpack.pack(self, f, default=json_encode)
+
+    @runs_in_executor
+    def clear_saved_panos(self):
+        with self.save_processing_lock:
+            with open(os.path.join(self.dir_path, 'panos.pack'), 'wb'):
+                pass
+            self.panos_len_at_last_save = 0
 
     @runs_in_executor
     def save_processing(self):
-        # State
-        def json_encode(obj):
+        def state_json_encode(obj):
             if isinstance(obj, Point):
                 return (obj.lat, obj.lng)
             if isinstance(obj, Path):
                 return attr.asdict(obj, recurse=False, filter=lambda a, v: a.name in path_status_attrs)
 
-        with open(os.path.join(self.dir_path, 'status.json'), 'w') as f:
-            json.dump(self, f, default=json_encode)
-
-        # Panos
-        def json_encode(obj):
+        def panos_json_encode(obj):
             if isinstance(obj, Point):
                 return (obj.lat, obj.lng)
 
-        # TODO save panos as they are being fetched.
-        with open(os.path.join(self.dir_path, 'panos.json'), 'w') as f:
-            json.dump(self.panos, f, default=json_encode)
+        with self.save_processing_lock:
+
+            with open(os.path.join(self.dir_path, 'status.json'), 'w') as f:
+                json.dump(self, f, default=state_json_encode)
+
+            with open(os.path.join(self.dir_path, 'panos.pack'), 'ab') as f:
+                for pano in self.panos[self.panos_len_at_last_save:]:
+                    msgpack.pack(pano, f, default=panos_json_encode)
+            self.panos_len_at_last_save = len(self.panos)
 
     async def load_route_from_gpx(self, gpx):
         os.mkdir(self.dir_path)
@@ -193,6 +213,7 @@ class Path(object):
 
     async def reset_processed(self):
         self.panos = []
+        await self.clear_saved_panos()
         await self.save_processing()
         self.change_callback({'reset': ['panos']})
 
@@ -211,7 +232,6 @@ class Path(object):
         last_at_distance = 0
         last_save_task = None
         last_pano_data = None
-        panos_length_at_last_save = 0
         no_pano_link = True
 
         new_panos = []
@@ -331,7 +351,7 @@ class Path(object):
                             'no_images_from': None,
                         }
 
-                        if len(self.panos) - panos_length_at_last_save > 100:
+                        if (not last_save_task or last_save_task.done()) and len(self.panos) - self.panos_len_at_last_save > 100:
                             if last_save_task:
                                 await asyncio.shield(last_save_task)
                             last_save_task = asyncio.ensure_future(self.save_processing())
