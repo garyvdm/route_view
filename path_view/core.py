@@ -40,9 +40,16 @@ def runs_in_executor(fn):
 class Point(object):
     lat = attr.ib()
     lng = attr.ib()
+    _nv = attr.ib(default=None, repr=False, cmp=False)
 
     def to_point(self):
         return self
+
+    @property
+    def nv(self):
+        if self._nv is None:
+            self._nv = lat_lon2n_E(deg2rad(self.lat), deg2rad(self.lng))
+        return self._nv
 
 
 @attr.s(slots=True)
@@ -412,17 +419,21 @@ def path_with_distance_and_index(path):
 
 
 def pairs(items):
-    return zip(items[:-1], items[1:])
+    itr = iter(items)
+    item1 = next(itr)
+    for item2 in itr:
+        yield item1, item2
+        item1 = item2
 
 
-def find_closest_point_pair(points, to_point, req_min_dist=20, stop_after_dist=100):
-    tpn = lat_lon2n_E(deg2rad(to_point.lat), deg2rad(to_point.lng))
+def find_closest_point_pair(points, to_point, req_min_dist=20, stop_after_dist=50):
+    tpn = to_point.nv
     min_distance = None
     min_point_pair = None
     min_c_point = None
     for point1, point2 in pairs(points):
-        p1 = lat_lon2n_E(deg2rad(point1.lat), deg2rad(point1.lng))
-        p2 = lat_lon2n_E(deg2rad(point2.lat), deg2rad(point2.lng))
+        p1 = point1.nv
+        p2 = point2.nv
         c12 = cross(p1, p2, axis=0)
         ctp = cross(tpn, c12, axis=0)
         c = unit(cross(ctp, c12, axis=0))
@@ -486,21 +497,25 @@ def point_from_distance_and_azimuth(point, distance, azimuth):
     return Point(lat=geo['lat2'], lng=geo['lon2'])
 
 
-def point_from_distance_on_path(path, dist):
+def geo_from_distance_on_path(path, dist):
     distance_covered = 0
+    first_pair = True
     for point1, point2, in pairs(path):
-        pair_distance, pair_azimuth = distance_and_azimuth(point1, point2)
-        if distance_covered + pair_distance < dist:
-            distance_covered += pair_distance
+        pair_geo_line = geodesic.InverseLine(point1.lat, point1.lng, point2.lat, point2.lng)
+        if distance_covered + pair_geo_line.s13 < dist:
+            distance_covered += pair_geo_line.s13
+            first_pair = False
         else:
-            return point_from_distance_and_azimuth(point1, dist - distance_covered, pair_azimuth)
+            geo = pair_geo_line.Position(dist - distance_covered)
+            if not first_pair:
+                geo = geodesic.Inverse(path[0].lat, path[0].lng, geo['lat2'], geo['lon2'])
+            return geo
+    return geodesic.Inverse(path[0].lat, path[0].lng, path[-1].lat, path[-1].lng)
 
 
 def get_azimuth_to_distance_on_path(from_point, path, dist):
-    to_point = point_from_distance_on_path([from_point] + path, dist)
-    if to_point is None:
-        to_point = path[-1]
-    return geodesic.Inverse(from_point.lat, from_point.lng, to_point.lat, to_point.lng)['azi1']
+    to_geo = geo_from_distance_on_path([from_point] + path, dist)
+    return to_geo['azi1']
 
 
 latlng_urlstr = lambda point: "{},{}".format(point.lat, point.lng)

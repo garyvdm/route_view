@@ -12,7 +12,7 @@ from path_view.core import (
     path_with_distance_and_index,
     find_closest_point_pair,
     iter_points_with_minimal_spacing,
-    point_from_distance_on_path,
+    geo_from_distance_on_path,
     GoogleApi,
 )
 
@@ -42,8 +42,11 @@ class TestHelpers(unittest.TestCase):
 
     def test_point_from_distance_on_path(self):
         path = [Point(0, 0), Point(0, 0.0001), Point(0.0001, 0.0001)]
-        self.assertEqual(point_from_distance_on_path(path, 10), Point(lat=0.0, lng=8.983152841195216e-05))
-        self.assertEqual(point_from_distance_on_path(path, 20), Point(lat=8.019994573584536e-05, lng=0.0001))
+        print(geo_from_distance_on_path(path, 10))
+        geo10 = geo_from_distance_on_path(path, 10)
+        geo20 = geo_from_distance_on_path(path, 20)
+        self.assertEqual((geo10['lat2'], geo10['lon2']), (0.0, 8.983152841195216e-05))
+        self.assertEqual((geo20['lat2'], geo20['lon2']), (8.019994573584536e-05, 0.0001))
 
 
 class TestPointProcess(unittest.TestCase):
