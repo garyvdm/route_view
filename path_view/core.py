@@ -581,7 +581,11 @@ class GoogleApi(object):
                     }) as r:
                 r.raise_for_status()
                 text = await r.text()
-            data = json.loads(text)
+            try:
+                data = json.loads(text)
+            except json.decoder.JSONDecodeError as e:
+                logging.error('Bad JSON from api: {}\n {}'.format(e, text))
+                raise
             if data:
                 id = data['Location']['panoId']
                 self.cache_db[key] = id
@@ -596,6 +600,7 @@ class GoogleApi(object):
             text = self.cache_db[id]
             # If the whole route is cached, we may end up blocking for a long time. quick sleep so we don't
             await asyncio.sleep(0)
+            from_cache = True
         except KeyError:
             async with self.session.get(
                     'http://cbks0.googleapis.com/cbk',
@@ -606,5 +611,14 @@ class GoogleApi(object):
                     }) as r:
                 r.raise_for_status()
                 text = await r.text()
+            from_cache = False
+        try:
+            data = json.loads(text)
+        except json.decoder.JSONDecodeError as e:
+            logging.error('Bad JSON from api: {}\n {}'.format(e, text))
+            if from_cache:
+                del self.cache_db[id]
+            raise
+        if not from_cache:
             self.cache_db[id] = text
-        return json.loads(text)
+        return data
