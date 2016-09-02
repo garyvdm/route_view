@@ -319,7 +319,13 @@ class Path(object):
 
                     if link_pano_id:
                         no_pano_link = False
+                        # logging.debug("Getting pano form link: {} -> {}".format(last_pano['id'], link_pano_id))
                         pano_data = await google_api.get_pano_id(link_pano_id)
+
+                        if not pano_data:
+                            # What????
+                            no_pano_link = True
+
                     else:
                         no_pano_link = True
                         pano_data = None
@@ -333,6 +339,7 @@ class Path(object):
                         logging.debug("Distance {} to nearest point too great for pano: {}"
                                       .format(dist, location['panoId']))
                         last_pano = None
+                        no_pano_link = True
                     else:
                         heading = get_azimuth_to_distance_on_path(inverse_line_cached, c_point, self.route_points[point_pair[1].index:], 20)
                         c_point_dist = point_pair[0].distance + distance(point_pair[0], c_point)
@@ -350,6 +357,8 @@ class Path(object):
                             description=location['description'], i=last_point_index, heading=heading,
                             at_distance=c_point_dist)
                         new_panos.append(pano)
+
+                        # logging.debug("Got pano {} {}".format(pano_point, location['description']))
                         last_pano = pano
                         last_pano_data = pano_data
                         last_point_index = point_pair[0].index
