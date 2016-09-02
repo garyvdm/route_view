@@ -1,3 +1,4 @@
+import functools
 import unittest
 import tempfile
 import contextlib
@@ -14,6 +15,7 @@ from path_view.core import (
     iter_points_with_minimal_spacing,
     geo_from_distance_on_path,
     GoogleApi,
+    geodesic,
 )
 
 
@@ -41,10 +43,10 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(len(points_with_minimal_spacing), 2)
 
     def test_point_from_distance_on_path(self):
+        inverse_line_cached = functools.lru_cache(32)(geodesic.InverseLine)
         path = [Point(0, 0), Point(0, 0.0001), Point(0.0001, 0.0001)]
-        print(geo_from_distance_on_path(path, 10))
-        geo10 = geo_from_distance_on_path(path, 10)
-        geo20 = geo_from_distance_on_path(path, 20)
+        geo10 = geo_from_distance_on_path(inverse_line_cached, path, 10)
+        geo20 = geo_from_distance_on_path(inverse_line_cached, path, 20)
         self.assertEqual((geo10['lat2'], geo10['lon2']), (0.0, 8.983152841195216e-05))
         self.assertEqual((geo20['lat2'], geo20['lon2']), (8.019994573584536e-05, 0.0001))
 

@@ -240,6 +240,7 @@ class Path(object):
         last_save_task = None
         last_pano_data = None
         no_pano_link = True
+        inverse_line_cached = functools.lru_cache(32)(geodesic.InverseLine)
 
         new_panos = []
         processing_at = {
@@ -302,7 +303,7 @@ class Path(object):
                     else:
                         if last_point_index + 2 == len(self.route_points) and distance(last_point, self.route_points[-1]) < 10:
                             break
-                        yaw_to_next = get_azimuth_to_distance_on_path(last_point, self.route_points[last_point_index + 1:], 10)
+                        yaw_to_next = get_azimuth_to_distance_on_path(inverse_line_cached, last_point, self.route_points[last_point_index + 1:], 10)
                         yaw_diff = lambda item: abs(deg_wrap_to_closest(float(item['yawDeg']) - yaw_to_next, 0))
                         pano_link = min(last_pano_data['Links'], key=yaw_diff)
 
@@ -329,7 +330,7 @@ class Path(object):
                                       .format(dist, location['panoId']))
                         last_pano = None
                     else:
-                        heading = get_azimuth_to_distance_on_path(c_point, self.route_points[point_pair[1].index:], 20)
+                        heading = get_azimuth_to_distance_on_path(inverse_line_cached, c_point, self.route_points[point_pair[1].index:], 20)
                         c_point_dist = point_pair[0].distance + distance(point_pair[0], c_point)
 
                         if c_point_dist - last_at_distance > 100:
@@ -497,11 +498,11 @@ def point_from_distance_and_azimuth(point, distance, azimuth):
     return Point(lat=geo['lat2'], lng=geo['lon2'])
 
 
-def geo_from_distance_on_path(path, dist):
+def geo_from_distance_on_path(inverse_line_cached, path, dist):
     distance_covered = 0
     first_pair = True
     for point1, point2, in pairs(path):
-        pair_geo_line = geodesic.InverseLine(point1.lat, point1.lng, point2.lat, point2.lng)
+        pair_geo_line = inverse_line_cached(point1.lat, point1.lng, point2.lat, point2.lng)
         if distance_covered + pair_geo_line.s13 < dist:
             distance_covered += pair_geo_line.s13
             first_pair = False
@@ -513,8 +514,8 @@ def geo_from_distance_on_path(path, dist):
     return geodesic.Inverse(path[0].lat, path[0].lng, path[-1].lat, path[-1].lng)
 
 
-def get_azimuth_to_distance_on_path(from_point, path, dist):
-    to_geo = geo_from_distance_on_path([from_point] + path, dist)
+def get_azimuth_to_distance_on_path(inverse_line_cached, from_point, path, dist):
+    to_geo = geo_from_distance_on_path(inverse_line_cached, [from_point] + path, dist)
     return to_geo['azi1']
 
 
