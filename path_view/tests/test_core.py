@@ -12,7 +12,7 @@ from path_view.core import (
     Path,
     path_with_distance_and_index,
     find_closest_point_pair,
-    iter_points_with_minimal_spacing,
+    iter_path_points_with_set_spacing,
     geo_from_distance_on_path,
     GoogleApi,
     geodesic,
@@ -27,20 +27,18 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(closest_point_pair, (Point(0, 30), Point(0, 60)))
         self.assertEqual(cpoint, Point(0, 45))
 
-    def test_iter_points_with_minimal_spacing(self):
+    def test_iter_path_points_with_set_spacing(self):
         points = [Point(0, 0), Point(0, 0.1), Point(0.1, 0.1)]
-        points_with_minimal_spacing = list(iter_points_with_minimal_spacing(points, spacing=4000))
-        # bit lazy to do asserts on the acatual values returned here. Just check the the correct number of items
-        # are returned
-        for point in points_with_minimal_spacing:
-            print(point)
-        self.assertEqual(len(points_with_minimal_spacing), 5)
-
-    def test_iter_points_with_minimal_spacing_close_points(self):
-        # Points that a closer together then the spacing value should work too.
-        points = [Point(0, 0), Point(0, 0.0000001)]
-        points_with_minimal_spacing = list(iter_points_with_minimal_spacing(points, spacing=4000))
-        self.assertEqual(len(points_with_minimal_spacing), 2)
+        points_with_minimal_spacing = list(iter_path_points_with_set_spacing(geodesic.InverseLine, points, spacing=4000))
+        import pprint
+        pprint.pprint(points_with_minimal_spacing, width=120)
+        self.assertEqual(points_with_minimal_spacing, [
+            (Point(lat=0.0, lng=0.03593261136478086), Point(lat=0, lng=0), 4000, 4000),
+            (Point(lat=0.0, lng=0.07186522272956172), Point(lat=0, lng=0), 8000, 4000),
+            (Point(lat=0.007850387571324917, lng=0.1), Point(lat=0, lng=0.1), 12000.0, 4000),
+            (Point(lat=0.044025166566829727, lng=0.1), Point(lat=0, lng=0.1), 16000.0, 4000),
+            (Point(lat=0.0801999452098834, lng=0.1), Point(lat=0, lng=0.1), 20000.0, 4000)
+        ])
 
     def test_point_from_distance_on_path(self):
         inverse_line_cached = functools.lru_cache(32)(geodesic.InverseLine)

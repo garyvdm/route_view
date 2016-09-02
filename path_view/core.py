@@ -269,21 +269,24 @@ class Path(object):
         send_changes_task = asyncio.ensure_future(send_changes())
 
         try:
-
             while True:
                 if no_pano_link:
-                    current_point_index = last_point_index
-                    for point in iter_points_with_minimal_spacing([last_point] + self.route_points[last_point_index + 1:],
-                                                                  spacing=20):
-                        if isinstance(point, IndexedPoint):
-                            current_point_index = point.index
+                    points_with_set_spacing = iter_path_points_with_set_spacing(
+                        inverse_line_cached, [last_point] + self.route_points[last_point_index + 1:],
+                        spacing=itertools.chain(itertools.repeat(10, 3), itertools.repeat(20, 3),
+                                                itertools.repeat(50, 10), itertools.repeat(100, 10),
+                                                itertools.repeat(200)))
+                    if last_point == self.route_points[0]:
+                        points_with_set_spacing = itertools.chain(((last_point, last_point, 0, 10), ), points_with_set_spacing)
 
-                        if point != self.route_points[0] and (point == last_point or distance_and_azimuth(point, last_point)[0] < 5):
-                            continue
-                        logging.debug("Get pano at {} ".format(point))
-                        pano_data = await google_api.get_pano_ll(point)
+                    for point, last_path_point, dist_from_last, point_dist in points_with_set_spacing:
+                        radius = round(point_dist * 0.75)
+                        logging.debug("Get pano at {} radius={}".format(point, radius))
+                        pano_data = await google_api.get_pano_ll(point, radius=radius)
                         if pano_data:
                             if last_pano and pano_data['Location']['panoId'] == last_pano['id']:
+                                last_point = point
+                                last_point_index = (last_path_point.index if isinstance(last_path_point, IndexedPoint) else last_point_index)
                                 continue
                             else:
                                 no_pano_link = False
@@ -291,12 +294,13 @@ class Path(object):
                         else:
                             processing_at = {
                                 'point': point,
-                                'index': current_point_index,
-                                'distance': last_at_distance,
+                                'index': (last_path_point.index if isinstance(last_path_point, IndexedPoint) else last_point_index),
+                                'distance': last_at_distance + dist_from_last,
                                 'no_images_from': {'point': last_point, 'index': last_point_index},
                             }
                     else:
                         break
+                    del points_with_set_spacing
                 else:
                     if last_pano['id'] in self.prefered_pano_chain:
                         link_pano_id = self.prefered_pano_chain[last_pano['id']]
@@ -469,16 +473,26 @@ def find_closest_point_pair(points, to_point, req_min_dist=20, stop_after_dist=5
     return min_point_pair, min_c_point, min_distance
 
 
-def iter_points_with_minimal_spacing(points, spacing=10):
+def iter_path_points_with_set_spacing(inverse_line_cached, points, spacing=10):
+    distance_covered = 0
+    try:
+        spacing = iter(spacing)
+    except TypeError:
+        spacing = itertools.repeat(spacing)
+    next_spacing = next(spacing)
+
+    prev_point_remaining = 0
+
     for point1, point2 in pairs(points):
-        yield point1
-        dist, azi = distance_and_azimuth(point1, point2)
-        pair_points = round(dist / spacing)
-        if pair_points:
-            pair_spacing = dist / pair_points
-            for i in range(1, pair_points - 1):
-                yield point_from_distance_and_azimuth(point1, i * pair_spacing, azi)
-    yield point2
+        pair_geo_line = inverse_line_cached(point1.lat, point1.lng, point2.lat, point2.lng)
+        pair_distance_covered = 0 - prev_point_remaining
+        while next_spacing + pair_distance_covered < pair_geo_line.s13:
+            pair_distance_covered += next_spacing
+            geo = pair_geo_line.Position(pair_distance_covered)
+            yield Point(lat=geo['lat2'], lng=geo['lon2']), point1, distance_covered + pair_distance_covered, next_spacing
+            next_spacing = next(spacing)
+        distance_covered += pair_geo_line.s13
+        prev_point_remaining = pair_geo_line.s13 - pair_distance_covered
 
 
 geodesic = geographiclib.geodesic.Geodesic.WGS84
@@ -552,7 +566,7 @@ class GoogleApi(object):
                     'http://cbks0.googleapis.com/cbk',
                     params={
                         'output': 'json',
-                        'radius': radius,
+                        'radius': round(radius),
                         'll': latlng_urlstr(point),
                         'key': self.api_key,
                     }) as r:
