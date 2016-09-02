@@ -341,7 +341,7 @@ class Path(object):
                         last_pano = None
                         no_pano_link = True
                     else:
-                        heading = get_azimuth_to_distance_on_path(inverse_line_cached, c_point, self.route_points[point_pair[1].index:], 20)
+                        heading = get_azimuth_to_distance_on_path(inverse_line_cached, c_point, self.route_points[point_pair[1].index:], 50)
                         c_point_dist = point_pair[0].distance + distance(point_pair[0], c_point)
 
                         if c_point_dist - last_at_distance > 100:
