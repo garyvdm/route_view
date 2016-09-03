@@ -10,24 +10,27 @@
         margin: 0px;
         padding: 0px
       }
-
-      #map{
-        height: 100%;
-      }
-
-      #panos{
-        float: left;
-        <!--height: 80%;-->
-      }
-
-      #elevation{
-        height: 20%;
-      }
     </style>
   </head>
   <body>
-    <div id="panos"><img width="960" height="720" id="pano_display" style="display: block;"></div>
-    <div id="map"></div>
+    <div id="panos" style="float: left; min-width: 640px; width: 50%;">
+      <div>
+        <button id="play_pause" disabled="disabled" style="padding:0;">
+          <img src="/static/pause.png" width="24" height="24" style="margin: 0 -12px;">
+        </button>
+        Processing status: <span id="processing_status"></span>
+      </div>
+      <div>
+        <div style="position: relative; height: 10px; margin: 10px 5px; ">
+          <canvas id="processing_progress" width="1000" height="10" style="position: absolute; left: 0; top: 0; width: 100%;"></canvas>
+          <canvas id="buffer_progress" width="1000" height="10" style="position: absolute; left: 0; top: 0; width: 100%;"></canvas>
+          <canvas id="play_progress" width="1000" height="10" style="position: absolute; left: 0; top: 0; width: 100%;"></canvas>
+        </div>
+      </div>
+      <img  id="pano_display" style="display: block; width: 100%">
+
+    </div>
+    <div id="map" style="height: 100%;"></div>
     <!--<div id="elevation"></div>-->
   </body>
 </html>

@@ -63,7 +63,7 @@ class IndexedPoint(Point):
 
 path_meta_attrs = {'name'}
 path_route_attrs = {'route_points', 'route_bounds'}
-path_status_attrs = {'processing_at', 'processing_complete'}
+path_status_attrs = {'processing_at', 'processing_complete', 'processing_status'}
 
 
 @attr.s
@@ -75,6 +75,7 @@ class Path(object):
     process_task = attr.ib(default=None, init=False)
     data_loaded = attr.ib(default=False, init=False)
     processing_complete = attr.ib(default=False)
+    processing_status = attr.ib(default='')
     route_points = attr.ib(default=None, init=False)
     route_bounds = attr.ib(default=None, init=False)
     panos = attr.ib(default=[], init=False)
@@ -96,7 +97,6 @@ class Path(object):
         if not self.data_loaded:
             with open(os.path.join(self.dir_path, 'route.pack'), 'rb') as f:
                 route = msgpack.unpack(f, encoding='utf-8')
-            print(route)
             route['route_points'] = path_with_distance_and_index(route['route_points'])
 
             with open(os.path.join(self.dir_path, 'status.json'), 'r') as f:
@@ -193,13 +193,15 @@ class Path(object):
         self.data_loaded = True
         self.processing_complete = False
         self.change_callback({'route_bounds': self.route_bounds})
-        self.change_callback({'route_points': self.route_points})
+        self.change_callback({'route_points': self.route_points, 'route_distance': self.route_points[-1].distance})
         await self.save_route()
 
     def get_existing_changes(self):
         if self.route_points:
+            yield {'status': self.processing_status}
+        if self.route_points:
             yield {'route_bounds': self.route_bounds}
-            yield {'route_points': self.route_points}
+            yield {'route_points': self.route_points, 'route_distance': self.route_points[-1].distance}
         if self.panos:
             yield {'panos': self.panos}
         if self.processing_at:
@@ -209,13 +211,19 @@ class Path(object):
         self.process_task = asyncio.ensure_future(self.process(google_api))
         self.process_task.add_done_callback(self.process_task_done_callback)
 
+    def set_status(self, status):
+        self.processing_status = status
+        self.change_callback({'status': 'Processing cancelled.'})
+
     def process_task_done_callback(self, fut):
         try:
             fut.result()
         except asyncio.CancelledError:
-            logging.info("Processing cancelled.")
-        except Exception:
-            logging.exception("Processing error: ")
+            logging.info('Processing cancelled.')
+            self.set_status('Processing cancelled.')
+        except Exception as e:
+            logging.exception('Processing error: ')
+            self.set_status('Processing error: {}'.format(e))
         self.process_task = None
 
     async def reset_processed(self):
@@ -225,7 +233,7 @@ class Path(object):
         self.change_callback({'reset': ['panos']})
 
     async def process(self, google_api):
-        self.change_callback({'status': 'Downloading street view image metadata.'})
+        self.set_status('Downloading street view image metadata.')
 
         # if self.panos:
         #     last_pano = self.panos[-1]
@@ -296,7 +304,7 @@ class Path(object):
                                 'point': point,
                                 'index': (last_path_point.index if isinstance(last_path_point, IndexedPoint) else last_point_index),
                                 'distance': last_at_distance + dist_from_last,
-                                'no_images_from': {'point': last_point, 'index': last_point_index},
+                                'no_images_from': {'point': last_point, 'index': last_point_index, 'distance': last_at_distance},
                             }
                     else:
                         break
@@ -342,6 +350,7 @@ class Path(object):
                         no_pano_link = True
                     else:
                         heading = get_azimuth_to_distance_on_path(inverse_line_cached, c_point, self.route_points[point_pair[1].index:], 50)
+                        distance_from_last = distance(point_pair[0], c_point)
                         c_point_dist = point_pair[0].distance + distance(point_pair[0], c_point)
 
                         if c_point_dist - last_at_distance > 100:
@@ -349,13 +358,14 @@ class Path(object):
                                 type='no_images',
                                 start_point=last_point.to_point(), start_index=last_point_index + 1,
                                 end_point=c_point.to_point(), end_index=point_pair[0].index,
-                                start_distance=last_at_distance + 1, end_distance=c_point_dist - 1,
+                                start_distance=last_at_distance, end_distance=c_point_dist - 10,
                             ))
+                            distance_from_last = 10
 
                         pano = dict(
                             type='pano', id=location['panoId'], point=pano_point,
                             description=location['description'], i=last_point_index, heading=heading,
-                            at_distance=c_point_dist)
+                            at_dist=c_point_dist, dist_from_last=distance_from_last)
                         new_panos.append(pano)
 
                         # logging.debug("Got pano {} {}".format(pano_point, location['description']))
@@ -396,7 +406,7 @@ class Path(object):
                 'no_images_from': None,
             }
             await send_changes_task
-            self.change_callback({'status': 'Complete'})
+            self.set_status('Complete')
         finally:
             if last_save_task:
                 await asyncio.shield(last_save_task)

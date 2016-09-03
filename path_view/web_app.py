@@ -30,15 +30,12 @@ def make_aio_app(loop, settings, google_api):
         else:
             aiohttp_debugtoolbar.setup(app, **settings.get('debugtoolbar_settings', {}))
 
-    add_static_resource(
-        app, 'static/upload_form.html', 'GET', '/',
-        content_type='text/html', charset='utf8',)
-    add_static_resource(
-        app, 'static/view.html', 'GET', '/view/{path_id}/',
-        content_type='text/html', charset='utf8',)
-    add_static_resource(
-        app, 'static/view.js', 'GET', '/static/view.js',
-        content_type='application/javascript', charset='utf8',)
+    add_static = partial(add_static_resource, app)
+    add_static('static/upload_form.html', '/', content_type='text/html', charset='utf8',)
+    add_static('static/view.html', '/view/{path_id}/', content_type='text/html', charset='utf8',)
+    add_static('static/view.js', '/static/view.js', content_type='application/javascript', charset='utf8',)
+    add_static('static/media-playback-start-symbolic.png', '/static/play.png', content_type='image/png')
+    add_static('static/media-playback-pause-symbolic.png', '/static/pause.png', content_type='image/png')
 
     app.router.add_route('POST', '/upload', upload_path)
     app.router.add_route('*', '/path_sock/{path_id}/', handler=path_ws, name='path_ws')
@@ -57,7 +54,7 @@ async def app_cancel_processing(app):
                 pass
 
 
-def add_static_resource(app, resource_name, method, path, *args, **kwargs):
+def add_static_resource(app, resource_name, path, *args, **kwargs):
     body = pkg_resources.resource_string('path_view', resource_name)
     body_processor = kwargs.pop('body_processor', None)
     if body_processor:
@@ -76,7 +73,7 @@ def add_static_resource(app, resource_name, method, path, *args, **kwargs):
             return web.Response(*args, **kwargs)
 
     # path = path.format(etag[:6])
-    app.router.add_route(method, path, static_resource_handler, name=slugify(resource_name))
+    app.router.add_route('GET', path, static_resource_handler, name=slugify(resource_name))
     return static_resource_handler
 
 async def upload_path(request):
