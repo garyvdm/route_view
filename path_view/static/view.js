@@ -1,8 +1,16 @@
 $(document).ready(function() {
+
+    var pano_rotate = new google.maps.StreetViewPanorama(document.getElementById('pano_rotate'),{
+        imageDateControl: true,
+        visible: false
+    });
+
     var map = new google.maps.Map(document.getElementById('map'), {
         center: {lat: 0, lng: 0},
-        zoom: 2
+        zoom: 2,
+        streetView: pano_rotate
     });
+
 
     var route_polyline = new google.maps.Polyline({
         path: [],
@@ -15,7 +23,7 @@ $(document).ready(function() {
     var processed_polyline = new google.maps.Polyline({
         path: [],
         geodesic: false,
-        strokeColor: '#0000FF',
+        strokeColor: '#0000imageDateControlFF',
         strokeOpacity: 1.0,
         strokeWeight: 2,
         map: map
@@ -36,7 +44,8 @@ $(document).ready(function() {
 
     var no_images_polyline = [];
 
-    var pano_display = document.getElementById('pano_display');
+    var pano_play = document.getElementById('pano_play');
+    var pano_rotate_contain = document.getElementById('pano_rotate_contain');
 
     var split_path_name = window.location.pathname.split('/');
     var path_id = split_path_name[split_path_name.length - 2];
@@ -49,6 +58,7 @@ $(document).ready(function() {
     var $processing_status = $('#processing_status');
     var $play_status = $('#play_status');
     var $play_pause = $('#play_pause');
+    var $show_pano_rotate = $('#show_pano_rotate');
     var $seek = $('#seek');
 
     var processing_progress = document.getElementById("processing_progress").getContext("2d");
@@ -134,21 +144,50 @@ $(document).ready(function() {
     };
 
     var playing = true;
+
+    function pause() {
+        playing = false;
+        if (show_next_pano_timeout) {
+            clearTimeout(show_next_pano_timeout);
+            show_next_pano_timeout = null;
+        }
+        $play_pause.find('img').attr('src', '/static/play.png');
+    }
+
+    function play() {
+        playing = true;
+        pano_rotate.setVisible(false);
+        if (!show_next_pano_timeout) show_next_pano();
+        $play_pause.find('img').attr('src', '/static/pause.png');
+    }
+
     $play_pause.click(function (){
         if (playing) {
-            playing = false;
-            if (show_next_pano_timeout) {
-                clearTimeout(show_next_pano_timeout);
-                show_next_pano_timeout = null;
-            }
-            $play_pause.find('img').attr('src', '/static/play.png');
+            pause();
+            show_pano_rotate(current_pano_index);
         } else {
-            playing = true;
-            if (!show_next_pano_timeout) show_next_pano();
-            $play_pause.find('img').attr('src', '/static/pause.png');
+            play();
         }
     });
-    $play_pause.prop( "disabled", false );
+
+    function show_pano_rotate(pano_index){
+        var pano = panos[pano_index];
+        pano_rotate.setPano(pano.id);
+        pano_rotate.setPov({'heading': pano.heading, 'pitch': 0});
+        pano_rotate.setZoom(1);
+        pano_rotate.setVisible(true);
+    }
+
+    pano_rotate.addListener('visible_changed', function() {
+        if (pano_rotate.getVisible()){
+            pause();
+            pano_play.style.display = 'none';
+            pano_rotate_contain.style.display = '';
+        } else {
+            pano_play.style.display = 'block';
+            pano_rotate_contain.style.display = 'none';
+        }
+    });
 
     var num_panos_loading = 0;
     var max_panos_loading = 8;
@@ -156,7 +195,7 @@ $(document).ready(function() {
     var current_pano_index = -1;
 
     function load_next_panos(){
-        while (num_panos_loading < max_panos_loading && panos_loaded_at < panos.length - 1 && panos_loaded_at < current_pano_index + 100 ) {
+        while (num_panos_loading < max_panos_loading && panos_loaded_at < panos.length - 1 && panos_loaded_at < current_pano_index + 50 ) {
             panos_loaded_at ++;
             load_pano(panos_loaded_at, false);
         }
@@ -190,9 +229,10 @@ $(document).ready(function() {
 
     function show_next_pano(){
         if (playing) {
-            show_next_pano_timeout = null
             if (current_pano_index + 1 < panos.length){
                 show_pano(current_pano_index + 1)
+            } else {
+                show_next_pano_timeout = null;
             }
         }
     };
@@ -208,8 +248,12 @@ $(document).ready(function() {
         }
         if (pano.hasOwnProperty('img_src')) {
             current_pano_index = pano_index
-            pano_display.src = pano.img_src;
+            pano_play.src = pano.img_src;
             position_marker.setPosition(pano.point);
+            if (show_next_pano_timeout) {
+                clearTimeout(show_next_pano_timeout);
+                show_next_pano_timeout = null;
+            }
             if (playing) {
                 show_next_pano_timeout = setTimeout(show_next_pano, 100);
             }
@@ -231,6 +275,9 @@ $(document).ready(function() {
                 show_next_pano_timeout = null;
             }
             show_pano(pano_index);
+            if (!playing) {
+                show_pano_rotate(pano_index);
+            }
         }
     });
 
