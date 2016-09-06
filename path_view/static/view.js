@@ -195,7 +195,7 @@ $(document).ready(function() {
     var current_pano_index = -1;
 
     function load_next_panos(){
-        while (num_panos_loading < max_panos_loading && panos_loaded_at < panos.length - 1 && panos_loaded_at < current_pano_index + 50 ) {
+        while (num_panos_loading < max_panos_loading && panos_loaded_at < panos.length - 1 && panos_loaded_at < current_pano_index + 500 ) {
             panos_loaded_at ++;
             load_pano(panos_loaded_at, false);
         }
