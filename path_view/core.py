@@ -213,7 +213,7 @@ class Path(object):
 
     def set_status(self, status):
         self.processing_status = status
-        self.change_callback({'status': 'Processing cancelled.'})
+        self.change_callback({'status': status})
 
     def process_task_done_callback(self, fut):
         try:
