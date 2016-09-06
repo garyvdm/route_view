@@ -175,17 +175,20 @@ $(document).ready(function() {
         pano_rotate.setPano(pano.id);
         pano_rotate.setPov({'heading': pano.heading, 'pitch': 0});
         pano_rotate.setZoom(1);
+        // hide off screen, so that we can show when images have loaded
+        pano_rotate_contain.style.left = '-10000px';
         pano_rotate.setVisible(true);
     }
 
     pano_rotate.addListener('visible_changed', function() {
         if (pano_rotate.getVisible()){
             pause();
-            pano_play.style.display = 'none';
-            pano_rotate_contain.style.display = '';
-        } else {
-            pano_play.style.display = 'block';
-            pano_rotate_contain.style.display = 'none';
+            var status_changed_list = pano_rotate.addListener('status_changed', function() {
+                setTimeout(function (){
+                    pano_rotate_contain.style.left = '0';
+                }, 500);
+                google.maps.event.removeListener(status_changed_list);
+            });
         }
     });
 
