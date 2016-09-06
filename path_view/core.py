@@ -317,13 +317,17 @@ class Path(object):
                             break
                         yaw_to_next = get_azimuth_to_distance_on_path(inverse_line_cached, last_point, self.route_points[last_point_index + 1:], 10)
                         yaw_diff = lambda item: abs(deg_wrap_to_closest(float(item['yawDeg']) - yaw_to_next, 0))
-                        pano_link = min(last_pano_data['Links'], key=yaw_diff)
+                        links = last_pano_data.get('Links')
+                        if links:
+                            pano_link = min(links, key=yaw_diff)
 
-                        if yaw_diff(pano_link) > 15:
-                            logging.debug("Yaw too different: {} {} {}".format(yaw_diff(pano_link), pano_link['yawDeg'], yaw_to_next))
-                            link_pano_id = None
+                            if yaw_diff(pano_link) > 15:
+                                logging.debug("Yaw too different: {} {} {}".format(yaw_diff(pano_link), pano_link['yawDeg'], yaw_to_next))
+                                link_pano_id = None
+                            else:
+                                link_pano_id = pano_link['panoId']
                         else:
-                            link_pano_id = pano_link['panoId']
+                            link_pano_id = None
 
                     if link_pano_id:
                         no_pano_link = False
