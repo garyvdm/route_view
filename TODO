@@ -1,0 +1,24 @@
+* Other file input formats (GPX1.0, TCX, KML)
+* Get name from file. Show name in title.
+* Show waypoints from file.
+* Only show rotatable panoramic when it is loaded.
+* If rotatable panoramic is moved to point on route, change play positon to that point.
+* Proxy & cache images.
+* Authentication.
+* List of routes.
+* Route sharing.
+* Cancel / Resume server processing.
+* View point positions.
+* Change point ordering.
+* Show elevation graph.
+* Speed selection.
+* Limit speed if processing/image downloading is too slow, so that playback is still smooth.
+* Quota use tracking.
+* Deleting of routes
+* Full screen for non rotatable and rotatable panos.
+* Resizeable and hideable map and elevation pains.
+* Forward and Back UI options when paused. (Disable rotatable pano UI.)
+* Seek by clicking on route on map.
+* Show image meta data (location and date.)
+
+
