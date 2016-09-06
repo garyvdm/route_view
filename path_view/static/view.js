@@ -228,12 +228,10 @@ $(document).ready(function() {
     var show_next_pano_timeout = null;
 
     function show_next_pano(){
-        if (playing) {
-            if (current_pano_index + 1 < panos.length){
-                show_pano(current_pano_index + 1)
-            } else {
-                show_next_pano_timeout = null;
-            }
+        if (playing && current_pano_index + 1 < panos.length){
+            show_pano(current_pano_index + 1)
+        } else {
+            show_next_pano_timeout = null;
         }
     };
 
