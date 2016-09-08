@@ -2,6 +2,7 @@ attrs
 aiohttp
 htmlwrite
 msgpack-python
+more-itertools
 nvector
 pyyaml
 python-slugify

@@ -31,18 +31,7 @@ $(document).ready(function() {
     var position_marker = new google.maps.Marker({
         map: map,
     });
-    var processed_to_no_images = new google.maps.Polyline({
-        path: [],
-        geodesic: false,
-        strokeColor: '#FF0000',
-        strokeOpacity: 1.0,
-        strokeWeight: 2.5,
-        map: map,
-        visible: false
-    });
-
-
-    var no_images_polyline = [];
+    var no_images_polyline = {};
 
     var pano_play = document.getElementById('pano_play');
     var pano_rotate_contain = document.getElementById('pano_rotate_contain');
@@ -88,57 +77,51 @@ $(document).ready(function() {
         }
         if (data.hasOwnProperty('panos')) {
             var new_panos = data.panos.filter(function (pano) {return pano.type == 'pano'});
+
             if (new_panos.length > 0){
                 panos = panos.concat(new_panos);
                 load_next_panos();
                 if (!show_next_pano_timeout) show_next_pano();
             }
-            var new_no_images = data.panos.filter(function (pano) {return pano.type == 'no_images'});
 
-            var i, no_images, path, new_no_images_len = new_no_images.length;
-            for (i=0; i<new_no_images_len; i++) {
-                no_images = new_no_images[i];
+            var no_images_by_start_point = data.panos.reduce(function (memo, item) {
+                if (item.type == 'no_images'){
+                    memo[item.start_point.lat+','+item.start_point.lat] = item
+                }
+                return memo;
+            }, {})
+
+            var no_images;
+            for (var key in no_images_by_start_point) {
+                if (!no_images_by_start_point.hasOwnProperty(key)) continue;
+                if (no_images_polyline.hasOwnProperty(key)) {
+                    no_images_polyline[key].setMap(null)
+                }
+                no_images = no_images_by_start_point[key];
                 path = [no_images.start_point].concat(
-                    route_points.slice(no_images.start_index, no_images.end_index + 1),
-                    [no_images.end_point]);
-
-                no_images_polyline.push(new google.maps.Polyline({
+                    route_points.slice(no_images.start_route_index, no_images.prev_route_index),
+                    [no_images.point]);
+                polyline = new google.maps.Polyline({
                     path: path,
                     geodesic: false,
                     strokeColor: '#FF0000',
                     strokeOpacity: 1.0,
                     strokeWeight: 2.5,
                     map: map
-                }));
+                });
+                no_images_polyline[key] = polyline
                 buffer_progress.fillStyle = "#FF0000";
                 buffer_progress.fillRect(
-                    1000 * no_images.start_distance / total_distance, 0,
-                    1000 * (no_images.end_distance - no_images.start_distance) / total_distance, 10
+                    1000 * no_images.at_dist / total_distance, 0,
+                    1000 * (0 - no_images.start_dist_from) / total_distance, 10
                 );
-
             }
-        }
-        if (data.hasOwnProperty('processing_at')) {
-            var path = route_points.slice(0, data.processing_at.index + 1).concat([data.processing_at.point]);
-            processed_polyline.setPath(path);
+
+            var last_pano = panos[panos.length - 1]
+            var processed_path = route_points.slice(0, last_pano.prev_route_index).concat([last_pano.point]);
+            processed_polyline.setPath(processed_path);
             processing_progress.fillStyle = "#4040FF";
-            processing_progress.fillRect(0, 0, 1000 * data.processing_at.distance / total_distance, 10);
-
-            var no_images_from = data.processing_at.no_images_from;
-            if (no_images_from){
-                path = [no_images_from.point].concat(
-                    route_points.slice(no_images_from.index, data.processing_at.index + 1),
-                    [data.processing_at.point]);
-                processed_to_no_images.setPath(path);
-                processed_to_no_images.setVisible(true);
-                processing_progress.fillStyle = "#FF0000";
-                processing_progress.fillRect(
-                    1000 * no_images_from.distance / total_distance, 0,
-                    1000 * (data.processing_at.distance - no_images_from.distance) / total_distance, 10
-                );
-            } else {
-                processed_to_no_images.setVisible(false);
-            }
+            processing_progress.fillRect(0, 0, 1000 * last_pano.at_dist / total_distance, 10);
         }
 
     };
@@ -198,9 +181,15 @@ $(document).ready(function() {
     var current_pano_index = -1;
 
     function load_next_panos(){
+        var processed_this_func = 0;
         while (num_panos_loading < max_panos_loading && panos_loaded_at < panos.length - 1 && panos_loaded_at < current_pano_index + 500 ) {
             panos_loaded_at ++;
             load_pano(panos_loaded_at, false);
+            processed_this_func ++;
+            if (processed_this_func >= 50){
+                setTimeout(load_next_panos, 100);
+                break;
+            }
         }
     };
 
