@@ -354,8 +354,8 @@ class Path(object):
                         no_pano_link = True
                     else:
                         heading = get_azimuth_to_distance_on_path(inverse_line_cached, c_point, self.route_points[point_pair[1].index:], 50)
-                        distance_from_last = distance(point_pair[0], c_point)
                         c_point_dist = point_pair[0].distance + distance(point_pair[0], c_point)
+                        distance_from_last = c_point_dist - last_at_distance
 
                         if c_point_dist - last_at_distance > 100:
                             new_panos.append(dict(
@@ -368,7 +368,7 @@ class Path(object):
 
                         pano = dict(
                             type='pano', id=location['panoId'], point=pano_point,
-                            description=location['description'], i=last_point_index, heading=heading,
+                            description=location['description'], prev_route_point_index=point_pair[0].index, heading=heading,
                             at_dist=c_point_dist, dist_from_last=distance_from_last)
                         new_panos.append(pano)
 

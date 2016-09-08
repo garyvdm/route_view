@@ -217,7 +217,7 @@ $(document).ready(function() {
             buffer_progress.fillStyle = "#0000FF";
             buffer_progress.fillRect(
                 1000 * pano.at_dist / total_distance, 0,
-                1000 * (0 - pano.dist_from_last + 5) / total_distance, 10
+                1000 * (0 - pano.dist_from_last) / total_distance, 10
             );
 
             if (show_on_load){
