@@ -8,7 +8,8 @@ $(document).ready(function() {
     var map = new google.maps.Map(document.getElementById('map'), {
         center: {lat: 0, lng: 0},
         zoom: 2,
-        streetView: pano_rotate
+        streetView: pano_rotate,
+        mapTypeId: 'terrain'
     });
 
 
@@ -35,6 +36,7 @@ $(document).ready(function() {
 
     var pano_play = document.getElementById('pano_play');
     var pano_rotate_contain = document.getElementById('pano_rotate_contain');
+    var no_images = document.getElementById('no_images');
 
     var split_path_name = window.location.pathname.split('/');
     var path_id = split_path_name[split_path_name.length - 2];
@@ -76,13 +78,9 @@ $(document).ready(function() {
             total_distance = data.route_distance;
         }
         if (data.hasOwnProperty('panos')) {
-            var new_panos = data.panos.filter(function (pano) {return pano.type == 'pano'});
-
-            if (new_panos.length > 0){
-                panos = panos.concat(new_panos);
-                load_next_panos();
-                if (!show_next_pano_timeout) show_next_pano();
-            }
+            panos = panos.concat(data.panos);
+            load_next_panos();
+            continue_play();
 
             var no_images_by_start_point = data.panos.reduce(function (memo, item) {
                 if (item.type == 'no_images'){
@@ -107,7 +105,8 @@ $(document).ready(function() {
                     strokeColor: '#FF0000',
                     strokeOpacity: 1.0,
                     strokeWeight: 2.5,
-                    map: map
+                    map: map,
+                    zIndex: 1
                 });
                 no_images_polyline[key] = polyline
                 buffer_progress.fillStyle = "#FF0000";
@@ -140,8 +139,15 @@ $(document).ready(function() {
     function play() {
         playing = true;
         pano_rotate.setVisible(false);
-        if (!show_next_pano_timeout) show_next_pano();
+        continue_play()
         $play_pause.find('img').attr('src', '/static/pause.png');
+    }
+
+    function continue_play() {
+        var pano_index = current_pano_index + 1
+        if (playing && !show_next_pano_timeout && !show_delayed && pano_index < panos.length ) {
+            show_next_pano_timeout = setTimeout(show_pano, 100, pano_index);
+        }
     }
 
     $play_pause.click(function (){
@@ -184,7 +190,7 @@ $(document).ready(function() {
         var processed_this_func = 0;
         while (num_panos_loading < max_panos_loading && panos_loaded_at < panos.length - 1 && panos_loaded_at < current_pano_index + 500 ) {
             panos_loaded_at ++;
-            load_pano(panos_loaded_at, false);
+            load_pano(panos_loaded_at);
             processed_this_func ++;
             if (processed_this_func >= 50){
                 setTimeout(load_next_panos, 100);
@@ -193,60 +199,65 @@ $(document).ready(function() {
         }
     };
 
-    function load_pano(pano_index, show_on_load) {
+    function load_pano(pano_index) {
         var pano = panos[pano_index];
-        pano.image = new Image();
-        pano.image.src = 'https://maps.googleapis.com/maps/api/streetview?size=640x480&pano=' + pano.id + '&heading=' + pano.heading + '&sensor=false&fov=110' + api_key
-        num_panos_loading++;
-        pano.image.onload = function(){
-            num_panos_loading--;
-            load_next_panos();
-            pano.img_src = pano.image.src;
-            delete pano.img;
-            buffer_progress.fillStyle = "#0000FF";
-            buffer_progress.fillRect(
-                1000 * pano.at_dist / total_distance, 0,
-                1000 * (0 - pano.dist_from_last) / total_distance, 10
-            );
+        if (pano.type == 'pano'){
+            pano.image = new Image();
+            pano.image.src = 'https://maps.googleapis.com/maps/api/streetview?size=640x480&pano=' + pano.id + '&heading=' + pano.heading + '&sensor=false&fov=110' + api_key
+            num_panos_loading++;
+            pano.image.onload = function(){
+                num_panos_loading--;
+                load_next_panos();
+                pano.img_src = pano.image.src;
+                delete pano.img;
+                buffer_progress.fillStyle = "#0000FF";
+                buffer_progress.fillRect(
+                    1000 * pano.at_dist / total_distance, 0,
+                    1000 * (0 - pano.dist_from_last) / total_distance, 10
+                );
 
-            if (show_on_load){
-                show_pano(pano_index);
-            } else {
-                if (!show_next_pano_timeout) show_next_pano()
-            }
-        };
+                if (pano_index == current_pano_index && show_delayed) show_pano(pano_index);
+            };
+        }
     }
 
     var show_next_pano_timeout = null;
 
-    function show_next_pano(){
-        if (playing && current_pano_index + 1 < panos.length){
-            show_pano(current_pano_index + 1)
-        } else {
-            show_next_pano_timeout = null;
-        }
-    };
+    var show_delayed = false;
 
     function show_pano(pano_index){
+        if (show_next_pano_timeout) {
+            clearTimeout(show_next_pano_timeout);
+            show_next_pano_timeout = null;
+        }
+        current_pano_index = pano_index
         var pano = panos[pano_index];
+
         play_progress.clearRect(0, 0, 1000, 10);
         play_progress.fillStyle = "#FFFFFF";
         play_progress.fillRect(1000 * pano.at_dist / total_distance, 0, -2, 10);
 
-        if (!pano.hasOwnProperty('image') && !pano.hasOwnProperty('img_src')) {
-            load_pano(pano_index, true);
+        show_delayed = false;
+
+        if (pano.type == 'pano') {
+            if (!pano.hasOwnProperty('image') && !pano.hasOwnProperty('img_src')) {
+                load_pano(pano_index);
+            }
+            if (pano.hasOwnProperty('img_src')) {
+                no_images.style.display = 'none';
+                pano_play.src = pano.img_src;
+            } else {
+                show_delayed = true;
+            }
         }
-        if (pano.hasOwnProperty('img_src')) {
-            current_pano_index = pano_index
-            pano_play.src = pano.img_src;
+
+        if (pano.type == 'no_images'){
+            no_images.style.display = '';
+        }
+
+        if (!show_delayed) {
             position_marker.setPosition(pano.point);
-            if (show_next_pano_timeout) {
-                clearTimeout(show_next_pano_timeout);
-                show_next_pano_timeout = null;
-            }
-            if (playing) {
-                show_next_pano_timeout = setTimeout(show_next_pano, 100);
-            }
+            continue_play();
             load_next_panos();
         }
     }
@@ -258,12 +269,9 @@ $(document).ready(function() {
             return pano.at_dist;
         }
         var pano_index = binarySearchClosest(panos, seek_distance, get_pano_at_dist);
-        panos_loaded_at = pano_index;
-        if (pano_index) {
-            if (show_next_pano_timeout){
-                clearTimeout(show_next_pano_timeout);
-                show_next_pano_timeout = null;
-            }
+        panos_loaded_at = pano_index - 1;
+        if (pano_index > -1) {
+            pano_play.src = '';
             show_pano(pano_index);
             if (!playing) {
                 show_pano_rotate(pano_index);
@@ -276,8 +284,9 @@ $(document).ready(function() {
 
 function binarySearchClosest(arr, search, key) {
 
+    var arrLength = arr.length;
     var minIndex = 0;
-    var maxIndex = arr.length - 2;
+    var maxIndex = arrLength - 2;
     var currentIndex;
     var currentElement, currentKey;
     var nextElement, nextKey;
@@ -294,7 +303,7 @@ function binarySearchClosest(arr, search, key) {
         nextElement = arr[currentIndex + 1]
         nextKey = key(nextElement)
 
-        if (currentKey < search  && search < nextKey ) {
+        if ((currentKey < search  && search < nextKey) || maxIndex == 0 || minIndex == arrLength - 2) {
             return currentIndex;
         } else if (nextKey > search) {
             maxIndex = currentIndex;

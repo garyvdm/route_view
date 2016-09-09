@@ -287,9 +287,6 @@ class Path(object):
                         radius = round(point_dist * 0.75)
                         logging.debug("Get pano at {} radius={}".format(point, radius))
                         pano_data = await google_api.get_pano_ll(point, radius=radius)
-                        if pano_data and not (last_pano and pano_data['Location']['panoId'] == last_pano.get('id')):
-                            no_pano_link = False
-                            break
 
                         if dist_from_last > 80:
                             while points_with_set_spacing_for_no_images.peek()[2] <= dist_from_last:
@@ -297,7 +294,7 @@ class Path(object):
                                 last_point_index = (no_image_point[1].index if isinstance(no_image_point[1], IndexedPoint) else last_point_index)
                                 no_images_item = dict(
                                     type='no_images', point=no_image_point[0],
-                                    prev_route_index=last_point_index,
+                                    prev_route_index=last_point_index + 1,
                                     at_dist=no_image_point[2] + no_image_start_distance, dist_from_last=no_image_point[3],
                                     start_point=no_image_start_point, start_route_index=no_image_start_index,
                                     start_dist_from=no_image_point[2],
@@ -307,6 +304,10 @@ class Path(object):
                                 last_pano_data = None
                                 last_point = no_image_point[0]
                                 last_at_distance = no_image_point[2] + no_image_start_distance
+
+                        if pano_data and not (last_pano and pano_data['Location']['panoId'] == last_pano.get('id')):
+                            no_pano_link = False
+                            break
 
                     else:
                         break
