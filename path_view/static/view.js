@@ -1,4 +1,4 @@
-$(document).ready(function() {
+document.addEventListener('DOMContentLoaded', function() {
 
     var pano_rotate = new google.maps.StreetViewPanorama(document.getElementById('pano_rotate'),{
         imageDateControl: true,
@@ -46,25 +46,26 @@ $(document).ready(function() {
     var route_points = [];
     var total_distance = null;
 
-    var $processing_status = $('#processing_status');
-    var $play_status = $('#play_status');
-    var $play_pause = $('#play_pause');
-    var $show_pano_rotate = $('#show_pano_rotate');
-    var $seek = $('#seek');
+    var processing_status = document.getElementById('processing_status');
+    var play_status = document.getElementById('play_status');
+    var play_pause = document.getElementById('play_pause');
+    var play_pause_img = play_pause.querySelector('img')
+    var seek = document.getElementById('seek');
 
     var processing_progress = document.getElementById("processing_progress").getContext("2d");
     var buffer_progress = document.getElementById("buffer_progress").getContext("2d");
-    var play_progress = document.getElementById("play_progress").getContext("2d");
+    var play_progress = document.getElementById("play_progress")
+    var play_progress_context = play_progress.getContext("2d");
 
 
     processing_progress.fillStyle = "#8080FF";
     processing_progress.fillRect(0, 0, 1000, 10);
 
     ws.onmessage = function(e) {
-        var data = $.parseJSON(e.data);
+        var data = JSON.parse(e.data);
 //        console.log(data);
         if (data.hasOwnProperty('status')) {
-            $processing_status.text(data.status);
+            processing_status.textContent = data.status;
         }
         if (data.hasOwnProperty('api_key')) {
             api_key = '&key=' + data.api_key;
@@ -133,14 +134,14 @@ $(document).ready(function() {
             clearTimeout(show_next_pano_timeout);
             show_next_pano_timeout = null;
         }
-        $play_pause.find('img').attr('src', '/static/play.png');
+        play_pause_img.src = '/static/play.png';
     }
 
     function play() {
         playing = true;
         pano_rotate.setVisible(false);
         continue_play()
-        $play_pause.find('img').attr('src', '/static/pause.png');
+        play_pause_img.src = '/static/pause.png';
     }
 
     function continue_play() {
@@ -150,7 +151,7 @@ $(document).ready(function() {
         }
     }
 
-    $play_pause.click(function (){
+    play_pause.addEventListener('click', function (){
         if (playing) {
             pause();
             show_pano_rotate(current_pano_index);
@@ -233,9 +234,9 @@ $(document).ready(function() {
         current_pano_index = pano_index
         var pano = panos[pano_index];
 
-        play_progress.clearRect(0, 0, 1000, 10);
-        play_progress.fillStyle = "#FFFFFF";
-        play_progress.fillRect(1000 * pano.at_dist / total_distance, 0, -2, 10);
+        play_progress_context.clearRect(0, 0, 1000, 10);
+        play_progress_context.fillStyle = "#FFFFFF";
+        play_progress_context.fillRect(1000 * pano.at_dist / total_distance, 0, -2, 10);
 
         show_delayed = false;
 
@@ -262,9 +263,9 @@ $(document).ready(function() {
         }
     }
 
-    $("#play_progress").click(function(e){
-        var $target = $(e.target);
-        var seek_distance  = (e.offsetX || e.pageX - $target.offset().left) / $target.width() * total_distance;
+    play_progress.addEventListener('click', function(e){
+        var rect = play_progress.getBoundingClientRect();
+        var seek_distance  = (e.offsetX || e.pageX - rect.left + document.body.scrollLeft) / play_progress.offsetWidth * total_distance;
         function get_pano_at_dist(pano) {
             return pano.at_dist;
         }
@@ -279,7 +280,7 @@ $(document).ready(function() {
         }
     });
 
-});
+}, false);
 
 
 function binarySearchClosest(arr, search, key) {
