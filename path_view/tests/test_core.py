@@ -69,13 +69,13 @@ class TestPointProcess(unittest.TestCase):
     @unittest_run_loop
     async def test_process1(self):
         with self.process_stack() as (api, tempdir, change_callback):
-            path = Path(None, tempdir, change_callback, name='Test Path', )
+            path = Path(None, tempdir, change_callback, name='Test Path', google_api=api)
             await path.save_metadata()
             await path.set_route_points(path_with_distance_and_index([
                 (-26.09332, 27.98120),
                 (-26.09326, 27.98112),
             ]))
-            await path.start_processing(api)
+            await path.start_processing()
             await path.process_task
             self.assertTrue(path.processing_complete)
 
@@ -91,12 +91,12 @@ class TestPointProcess(unittest.TestCase):
         # This path would go into an infinate loop at the end. Test to make sure it finishes.
 
         with self.process_stack() as (api, tempdir, change_callback):
-            path = Path(None, tempdir, change_callback, name='Test Path', )
+            path = Path(None, tempdir, change_callback, name='Test Path', google_api=api)
             await path.set_route_points(path_with_distance_and_index([
                 (45.03778, 6.92901),
                 (45.03790, 6.92922),
                 (45.03795, 6.92929),
             ]))
-            await path.start_processing(api)
+            await path.start_processing()
             await path.process_task
             self.assertTrue(path.processing_complete)

@@ -85,6 +85,7 @@ class Path(object):
     prefered_pano_chain = attr.ib(default={}, init=False)
     panos_len_at_last_save = attr.ib(default=0, init=False)
     save_processing_lock = attr.ib(default=attr.Factory(threading.Lock), init=False)
+    google_api = attr.ib(default=None)
 
     @classmethod
     @runs_in_executor
@@ -206,17 +207,17 @@ class Path(object):
         if self.panos:
             yield {'panos': self.panos}
 
-    async def start_processing(self, google_api):
-        self.process_task = asyncio.ensure_future(self.process(google_api))
+    async def start_processing(self):
+        self.process_task = asyncio.ensure_future(self.process())
         self.process_task.add_done_callback(self.process_task_done_callback)
 
     async def cancel_processing(self):
         if self.process_task:
             self.process_task.cancel()
 
-    async def resume_processing(self, google_api):
+    async def resume_processing(self):
         if not self.process_task:
-            await self.start_processing(google_api)
+            await self.start_processing()
 
     def set_status(self, status):
         self.processing_status = status
@@ -235,7 +236,8 @@ class Path(object):
         await self.save_processing()
         self.change_callback({'reset': ['panos']})
 
-    async def process(self, google_api):
+    async def process(self):
+        google_api = self.google_api
         self.set_status({'text': 'Downloading street view image metadata.', 'cancelable': True, 'resumable': False})
         try:
 

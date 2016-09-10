@@ -84,10 +84,11 @@ async def upload_path(request):
     path_id = str(uuid.uuid4())
     path_dir_path = os.path.join(app['path_view.settings']['paths_path'], path_id)
     path = Path(id=path_id, name=name, dir_path=path_dir_path,
-                change_callback=partial(change_callback, request.app['path_view.paths_sessions'][path_id]))
+                change_callback=partial(change_callback, request.app['path_view.paths_sessions'][path_id]),
+                google_api=app['path_view.google_api'])
     app['path_view.paths'][path_id] = path
     await path.load_route_from_gpx(upload_file)
-    await path.start_processing(app['path_view.google_api'])
+    await path.start_processing()
     return web.HTTPFound('/view/{}/'.format(path_id))
 
 
@@ -100,6 +101,7 @@ async def path_ws(request):
     if path is None:
         path_dir_path = os.path.join(request.app['path_view.settings']['paths_path'], path_id)
         path = await (Path.load(path_id, path_dir_path, partial(change_callback, request.app['path_view.paths_sessions'][path_id])))
+        path.google_api = request.app['path_view.google_api']
         request.app['path_view.paths'][path_id] = path
         await path.ensure_data_loaded()
 
@@ -118,7 +120,7 @@ async def path_ws(request):
                 if data == 'cancel':
                     await path.cancel_processing()
                 if data == 'resume':
-                    await path.resume_processing(request.app['path_view.google_api'])
+                    await path.resume_processing()
             if msg.tp == MsgType.close:
                 await ws.close()
             if msg.tp == MsgType.error:
