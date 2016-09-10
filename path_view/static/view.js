@@ -56,7 +56,8 @@ document.addEventListener('DOMContentLoaded', function() {
     var buffer_progress = document.getElementById("buffer_progress").getContext("2d");
     var play_progress = document.getElementById("play_progress")
     var play_progress_context = play_progress.getContext("2d");
-
+    var cancel = document.getElementById('cancel');
+    var resume = document.getElementById('resume');
 
     processing_progress.fillStyle = "#8080FF";
     processing_progress.fillRect(0, 0, 1000, 10);
@@ -65,7 +66,9 @@ document.addEventListener('DOMContentLoaded', function() {
         var data = JSON.parse(e.data);
 //        console.log(data);
         if (data.hasOwnProperty('status')) {
-            processing_status.textContent = data.status;
+            processing_status.textContent = data.status.text;
+            cancel.style.display = data.status.cancelable ? '' : 'none';
+            resume.style.display = data.status.resumable ? '' : 'none';
         }
         if (data.hasOwnProperty('api_key')) {
             api_key = '&key=' + data.api_key;
@@ -125,6 +128,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
     };
+
+    cancel.addEventListener('click', function (){
+        ws.send(JSON.stringify('cancel'));
+    });
+
+    resume.addEventListener('click', function (){
+        ws.send(JSON.stringify('resume'));
+    });
 
     var playing = true;
 

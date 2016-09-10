@@ -14,19 +14,6 @@
   </head>
   <body>
     <div id="panos" style="float: left; min-width: 640px; width: 50%;">
-      <div>
-        <button id="play_pause" style="padding:0;">
-          <img src="/static/pause.png" width="24" height="24" >
-        </button>
-        Processing status: <span id="processing_status"></span>
-      </div>
-      <div>
-        <div style="position: relative; height: 10px; margin: 10px 5px; ">
-          <canvas id="processing_progress" width="1000" height="10" style="position: absolute; left: 0; top: 0; width: 100%;"></canvas>
-          <canvas id="buffer_progress" width="1000" height="10" style="position: absolute; left: 0; top: 0; width: 100%;"></canvas>
-          <canvas id="play_progress" width="1000" height="10" style="position: absolute; left: 0; top: 0; width: 100%;"></canvas>
-        </div>
-      </div>
       <div style="position: relative;">
         <div id="pano_rotate_contain" style="width: 100%; position: absolute; ">
           <div style="padding-bottom: 75%;"></div>
@@ -36,8 +23,24 @@
         <div id="no_images" style="margin: auto; padding: 10px; background: red; color: white; position: absolute; top:0; left: 0; right: 0; display: none;">
           No StreetView images for this section
         </div>
+        <div style="padding-bottom: 75%;"></div>
       </div>
-
+      <div>
+        <div style="position: relative; height: 10px; margin: 10px 5px; ">
+          <canvas id="processing_progress" width="1000" height="10" style="position: absolute; left: 0; top: 0; width: 100%;"></canvas>
+          <canvas id="buffer_progress" width="1000" height="10" style="position: absolute; left: 0; top: 0; width: 100%;"></canvas>
+          <canvas id="play_progress" width="1000" height="10" style="position: absolute; left: 0; top: 0; width: 100%;"></canvas>
+        </div>
+      </div>
+      <div>
+        <button id="play_pause" style="padding:0;">
+          <img src="/static/pause.png" width="24" height="24" >
+        </button>
+        <br>
+        Processing status: <span id="processing_status"></span>
+        <button id="cancel" style="display: none;">Cancel</button>
+        <button id="resume" style="display: none;">Resume</button>
+      </div>
     </div>
     <div id="map" style="height: 100%;"></div>
     <!--<div id="elevation"></div>-->

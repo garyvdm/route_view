@@ -114,11 +114,14 @@ async def path_ws(request):
     try:
         async for msg in ws:
             if msg.tp == MsgType.text:
-                if msg.data == 'close':
-                    await ws.close()
-                else:
-                    pass
-            elif msg.tp == MsgType.error:
+                data = json.loads(msg.data)
+                if data == 'cancel':
+                    await path.cancel_processing()
+                if data == 'resume':
+                    await path.resume_processing(request.app['path_view.google_api'])
+            if msg.tp == MsgType.close:
+                await ws.close()
+            if msg.tp == MsgType.error:
                 raise ws.exception()
     finally:
         path_sessions.remove(ws)

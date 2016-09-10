@@ -209,19 +209,23 @@ class Path(object):
         self.process_task = asyncio.ensure_future(self.process(google_api))
         self.process_task.add_done_callback(self.process_task_done_callback)
 
+    async def cancel_processing(self):
+        if self.process_task:
+            self.process_task.cancel()
+
+    async def resume_processing(self, google_api):
+        if not self.process_task:
+            await self.start_processing(google_api)
+
     def set_status(self, status):
         self.processing_status = status
-        self.change_callback({'status': status})
+        self.change_callback({'status': status, })
 
     def process_task_done_callback(self, fut):
         try:
             fut.result()
-        except asyncio.CancelledError:
-            logging.info('Processing cancelled.')
-            self.set_status('Processing cancelled.')
-        except Exception as e:
-            logging.exception('Processing error: ')
-            self.set_status('Processing error: {}'.format(e))
+        except Exception:
+            pass
         self.process_task = None
 
     async def reset_processed(self):
@@ -231,40 +235,47 @@ class Path(object):
         self.change_callback({'reset': ['panos']})
 
     async def process(self, google_api):
-        self.set_status('Downloading street view image metadata.')
-
-        # if self.panos:
-        #     last_pano = self.panos[-1]
-        #     last_point_index = self.route_points[last_pano.closest_point_pair_index]
-        # else:
-        #     last_pano = None
-        #     last_point_index = 0
-        last_pano = None
-        last_point = self.route_points[0]
-        last_point_index = 0
-        last_at_distance = 0
-        last_save_task = None
-        last_pano_data = None
-        no_pano_link = True
-        inverse_line_cached = functools.lru_cache(32)(geodesic.InverseLine)
-
-        new_panos = []
-
-        async def send_changes():
-            nonlocal new_panos
-            while True:
-                await asyncio.sleep(0.2)
-                if new_panos:
-                    self.panos.extend(new_panos)
-                    self.change_callback({'panos': new_panos})
-                    new_panos = []
-
-                if self.processing_complete:
-                    break
-
-        send_changes_task = asyncio.ensure_future(send_changes())
-
+        self.set_status({'text': 'Downloading street view image metadata.', 'cancelable': True, 'resumable': False})
         try:
+
+            if not self.panos:
+                last_pano = None
+                last_point_index = 0
+                last_point = self.route_points[0]
+                last_at_distance = 0
+                last_pano_data = None
+                no_pano_link = True
+            else:
+                last_pano = self.panos[-1]
+                last_point_index = last_pano['prev_route_index']
+                last_point = last_pano['point']
+                last_at_distance = last_pano['at_dist']
+                if last_pano['type'] == 'pano':
+                    last_pano_data = await google_api.get_pano_id(last_pano['id'])
+                    no_pano_link = False
+                else:
+                    last_pano_data = None
+                    no_pano_link = True
+
+            last_save_task = None
+            inverse_line_cached = functools.lru_cache(32)(geodesic.InverseLine)
+
+            new_panos = []
+
+            async def send_changes():
+                nonlocal new_panos
+                while True:
+                    await asyncio.sleep(0.2)
+                    if new_panos:
+                        self.panos.extend(new_panos)
+                        self.change_callback({'panos': new_panos})
+                        new_panos = []
+
+                    if self.processing_complete:
+                        break
+
+            send_changes_task = asyncio.ensure_future(send_changes())
+
             while True:
                 if no_pano_link:
                     points_with_set_spacing = iter_path_points_with_set_spacing(
@@ -391,7 +402,13 @@ class Path(object):
 
             self.processing_complete = True
             await send_changes_task
-            self.set_status('Complete')
+            self.set_status({'text': 'Complete', 'cancelable': False, 'resumable': False})
+        except asyncio.CancelledError:
+            logging.info('Processing cancelled.')
+            self.set_status({'text': 'Processing cancelled.', 'cancelable': False, 'resumable': True})
+        except Exception as e:
+            logging.exception('Processing error: ')
+            self.set_status({'text': 'Processing error: {}'.format(e), 'cancelable': False, 'resumable': True})
         finally:
             if last_save_task:
                 await asyncio.shield(last_save_task)
