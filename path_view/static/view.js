@@ -58,10 +58,57 @@ document.addEventListener('DOMContentLoaded', function() {
     var play_progress_context = play_progress.getContext("2d");
     var cancel = document.getElementById('cancel');
     var resume = document.getElementById('resume');
+
     var show_pano_markers = document.getElementById('show_pano_markers');
+    var add_chain_item = document.getElementById('add_chain_item');
+    var add_chain_item_cancel = document.getElementById('add_chain_item_cancel');
+    var add_chain_item_set = document.getElementById('add_chain_item_set');
+    var current_add_chain_item_src = null;
 
     processing_progress.fillStyle = "#8080FF";
     processing_progress.fillRect(0, 0, 1000, 10);
+
+    function update_progress_for_panos(new_panos){
+        var no_images_by_start_point = new_panos.reduce(function (memo, item) {
+            if (item.type == 'no_images'){
+                memo[item.start_point.lat+','+item.start_point.lat] = item
+            }
+            return memo;
+        }, {})
+
+        var no_images;
+        for (var key in no_images_by_start_point) {
+            if (!no_images_by_start_point.hasOwnProperty(key)) continue;
+            if (no_images_polyline.hasOwnProperty(key)) {
+                no_images_polyline[key].setMap(null)
+            }
+            no_images = no_images_by_start_point[key];
+            path = [no_images.start_point].concat(
+                route_points.slice(no_images.start_route_index, no_images.prev_route_index),
+                [no_images.point]);
+            polyline = new google.maps.Polyline({
+                path: path,
+                geodesic: false,
+                strokeColor: '#FF0000',
+                strokeOpacity: 1.0,
+                strokeWeight: 2.5,
+                map: map,
+                zIndex: 1
+            });
+            no_images_polyline[key] = polyline
+            buffer_progress.fillStyle = "#FF0000";
+            buffer_progress.fillRect(
+                1000 * no_images.at_dist / total_distance, 0,
+                1000 * (0 - no_images.start_dist_from) / total_distance, 10
+            );
+        }
+
+        var last_pano = panos[panos.length - 1]
+        var processed_path = route_points.slice(0, last_pano.prev_route_index).concat([last_pano.point]);
+        processed_polyline.setPath(processed_path);
+        processing_progress.fillStyle = "#4040FF";
+        processing_progress.fillRect(0, 0, 1000 * last_pano.at_dist / total_distance, 10);
+    }
 
     ws.onmessage = function(e) {
         var data = JSON.parse(e.data);
@@ -86,46 +133,18 @@ document.addEventListener('DOMContentLoaded', function() {
             panos = panos.concat(data.panos);
             load_next_panos();
             continue_play();
+            update_progress_for_panos(data.panos);
+            do_show_pano_markers();
+        }
 
-            var no_images_by_start_point = data.panos.reduce(function (memo, item) {
-                if (item.type == 'no_images'){
-                    memo[item.start_point.lat+','+item.start_point.lat] = item
-                }
-                return memo;
-            }, {})
-
-            var no_images;
-            for (var key in no_images_by_start_point) {
-                if (!no_images_by_start_point.hasOwnProperty(key)) continue;
-                if (no_images_polyline.hasOwnProperty(key)) {
-                    no_images_polyline[key].setMap(null)
-                }
-                no_images = no_images_by_start_point[key];
-                path = [no_images.start_point].concat(
-                    route_points.slice(no_images.start_route_index, no_images.prev_route_index),
-                    [no_images.point]);
-                polyline = new google.maps.Polyline({
-                    path: path,
-                    geodesic: false,
-                    strokeColor: '#FF0000',
-                    strokeOpacity: 1.0,
-                    strokeWeight: 2.5,
-                    map: map,
-                    zIndex: 1
-                });
-                no_images_polyline[key] = polyline
-                buffer_progress.fillStyle = "#FF0000";
-                buffer_progress.fillRect(
-                    1000 * no_images.at_dist / total_distance, 0,
-                    1000 * (0 - no_images.start_dist_from) / total_distance, 10
-                );
-            }
-
-            var last_pano = panos[panos.length - 1]
-            var processed_path = route_points.slice(0, last_pano.prev_route_index).concat([last_pano.point]);
-            processed_polyline.setPath(processed_path);
-            processing_progress.fillStyle = "#4040FF";
-            processing_progress.fillRect(0, 0, 1000 * last_pano.at_dist / total_distance, 10);
+        if (data.hasOwnProperty('reset_panos_index')) {
+            panos = panos.slice(0, data.reset_panos_index + 1);
+            for (key in no_images_polyline) { no_images_polyline[key].setMap(null); }
+            no_images_polyline = {};
+            processing_progress.fillStyle = "#8080FF";
+            processing_progress.fillRect(0, 0, 1000, 10);
+            buffer_progress.clearRect(1000 * panos[data.reset_panos_index].at_dist / total_distance, 0, 1000, 10);
+            update_progress_for_panos(panos);
         }
 
     };
@@ -192,6 +211,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 google.maps.event.removeListener(status_changed_list);
             });
         }
+        hide_show_add_chain_item();
     });
 
     var num_panos_loading = 0;
@@ -319,6 +339,55 @@ document.addEventListener('DOMContentLoaded', function() {
     show_pano_markers.addEventListener('change', do_show_pano_markers);
     google.maps.event.addListener(map, 'idle', do_show_pano_markers);
 
+
+    add_chain_item.addEventListener('click', function(e){
+        current_add_chain_item_src = pano_rotate.getPano()
+        hide_show_add_chain_item();
+    });
+
+    add_chain_item_set.addEventListener('click', function(e){
+        ws.send(JSON.stringify({'add_pano_chain_item': [current_add_chain_item_src, pano_rotate.getPano()]}));
+        current_add_chain_item_src = null;
+        hide_show_add_chain_item();
+    });
+
+    add_chain_item_cancel.addEventListener('click', function(e){
+        current_add_chain_item_src = null;
+        hide_show_add_chain_item();
+    });
+
+    function hide_show_add_chain_item() {
+        if (pano_rotate.getVisible()){
+            var pano_id = pano_rotate.getPano();
+            var pano_index = panos.findIndex(function (pano) { return pano.id == pano_id; });
+            if (pano_index > -1) {
+                add_chain_item.style.display = '';
+            } else {
+                if (current_add_chain_item_src) {
+                    add_chain_item.style.display = '';
+                } else {
+                    add_chain_item.style.display = 'none';
+                }
+            }
+        } else {
+            current_add_chain_item_src = null;
+            add_chain_item.style.display = 'none';
+        }
+
+        if (current_add_chain_item_src != null) {
+            add_chain_item.disabled = true;
+            add_chain_item_set.style.display = '';
+            add_chain_item_cancel.style.display = '';
+        } else {
+            add_chain_item.disabled = false;
+            add_chain_item_set.style.display = 'none';
+            add_chain_item_cancel.style.display = 'none';
+
+        }
+
+    }
+
+
 }, false);
 
 
@@ -354,4 +423,28 @@ function binarySearchClosest(arr, search, key) {
     }
 
     return -1;
+}
+
+if (!Array.prototype.findIndex) {
+    Array.prototype.findIndex = function(predicate) {
+        'use strict';
+        if (this == null) {
+            throw new TypeError('Array.prototype.findIndex called on null or undefined');
+        }
+        if (typeof predicate !== 'function') {
+            throw new TypeError('predicate must be a function');
+        }
+        var list = Object(this);
+        var length = list.length >>> 0;
+        var thisArg = arguments[1];
+        var value;
+
+        for (var i = 0; i < length; i++) {
+            value = list[i];
+            if (predicate.call(thisArg, value, i, list)) {
+                return i;
+            }
+        }
+        return -1;
+    };
 }

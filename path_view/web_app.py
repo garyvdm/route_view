@@ -117,10 +117,13 @@ async def path_ws(request):
         async for msg in ws:
             if msg.tp == MsgType.text:
                 data = json.loads(msg.data)
+                logging.debug(data)
                 if data == 'cancel':
                     await path.cancel_processing()
                 if data == 'resume':
                     await path.resume_processing()
+                if isinstance(data, dict) and 'add_pano_chain_item' in data:
+                    await path.add_pano_chain_item(*data['add_pano_chain_item'])
             if msg.tp == MsgType.close:
                 await ws.close()
             if msg.tp == MsgType.error:
@@ -132,6 +135,7 @@ async def path_ws(request):
 
 def change_callback(path_sessions, change):
     msg = json.dumps(change, default=json_encode)
+    logging.debug(str(change)[:120])
     for session in path_sessions:
         try:
             session.send_str(msg)

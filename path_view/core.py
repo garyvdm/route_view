@@ -65,7 +65,7 @@ class IndexedPoint(Point):
 
 
 path_meta_attrs = {'name'}
-path_route_attrs = {'route_points', 'route_bounds'}
+path_route_attrs = {'route_points', 'route_bounds', 'pano_chain'}
 path_status_attrs = {'processing_complete', 'processing_status'}
 
 
@@ -82,7 +82,7 @@ class Path(object):
     route_points = attr.ib(default=None, init=False)
     route_bounds = attr.ib(default=None, init=False)
     panos = attr.ib(default=[], init=False)
-    prefered_pano_chain = attr.ib(default={}, init=False)
+    pano_chain = attr.ib(default={}, init=False)
     panos_len_at_last_save = attr.ib(default=0, init=False)
     save_processing_lock = attr.ib(default=attr.Factory(threading.Lock), init=False)
     google_api = attr.ib(default=None)
@@ -219,6 +219,24 @@ class Path(object):
         if not self.process_task:
             await self.start_processing()
 
+    async def add_pano_chain_item(self, src, dest):
+        self.pano_chain[src] = dest
+        for i, pano in enumerate(self.panos):
+            if pano.get('id') == src:
+                break
+        else:
+            i = None
+
+        if i is not None:
+            await self.cancel_processing()
+
+            self.panos = self.panos[:i + 1]
+            await self.clear_saved_panos()
+            await self.save_processing()
+            self.change_callback({'reset_panos_index': i})
+
+            await self.resume_processing()
+
     def set_status(self, status):
         self.processing_status = status
         self.change_callback({'status': status, })
@@ -234,7 +252,7 @@ class Path(object):
         self.panos = []
         await self.clear_saved_panos()
         await self.save_processing()
-        self.change_callback({'reset': ['panos']})
+        self.change_callback({'reset_panos_index': -1})
 
     async def process(self):
         google_api = self.google_api
@@ -327,8 +345,8 @@ class Path(object):
                         break
                     del points_with_set_spacing
                 else:
-                    if last_pano['id'] in self.prefered_pano_chain:
-                        link_pano_id = self.prefered_pano_chain[last_pano['id']]
+                    if last_pano['id'] in self.pano_chain:
+                        link_pano_id = self.pano_chain[last_pano['id']]
                     else:
                         if last_point_index + 2 == len(self.route_points) and distance(last_point, self.route_points[-1]) < 10:
                             break

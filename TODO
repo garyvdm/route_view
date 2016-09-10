@@ -6,7 +6,6 @@
 * Authentication.
 * List of routes.
 * Route sharing.
-* Change point ordering.
 * Show elevation graph.
 * Speed selection.
 * Limit speed if processing/image downloading is too slow, so that playback is still smooth.
@@ -17,5 +16,8 @@
 * Forward and Back UI options when paused. (Disable rotatable pano UI.)
 * Seek by clicking on route on map.
 * Show image meta data (location and date.)
-
+* Removing pano chain items.
+* Option to show bad yaw panos and visited non route panos
+* Move cache save out of the critical chain.
+* Use lock when downloading api data so that when 2 people processing the same route, the points only get downloaded once.
 
