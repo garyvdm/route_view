@@ -58,6 +58,7 @@ document.addEventListener('DOMContentLoaded', function() {
     var play_progress_context = play_progress.getContext("2d");
     var cancel = document.getElementById('cancel');
     var resume = document.getElementById('resume');
+    var show_pano_markers = document.getElementById('show_pano_markers');
 
     processing_progress.fillStyle = "#8080FF";
     processing_progress.fillRect(0, 0, 1000, 10);
@@ -268,6 +269,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         if (!show_delayed) {
+            if (!map.getBounds().contains(pano.point)) map.panTo(pano.point);
             position_marker.setPosition(pano.point);
             continue_play();
             load_next_panos();
@@ -290,6 +292,32 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     });
+
+
+    var pano_markers = [];
+    function do_show_pano_markers(){
+        pano_markers.forEach(function(marker){ marker.setMap(null); });
+        pano_markers = [];
+        if (show_pano_markers.checked && map.getZoom() > 17) {
+            var bounds = map.getBounds();
+            panos.forEach(function(pano){
+                if (pano.type == 'pano' && bounds.contains(pano.original_point)) {
+                    var marker = new google.maps.Marker({
+                        position: pano.original_point,
+                        map: map,
+                        icon: {
+                          path: google.maps.SymbolPath.CIRCLE,
+                          scale: 1
+                        }
+                    })
+                    google.maps.event.addListener(marker, 'click', do_show_pano_markers);
+                    pano_markers.push(marker);
+                }
+            });
+        }
+    }
+    show_pano_markers.addEventListener('change', do_show_pano_markers);
+    google.maps.event.addListener(map, 'idle', do_show_pano_markers);
 
 }, false);
 
