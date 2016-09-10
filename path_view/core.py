@@ -595,7 +595,7 @@ class GoogleApi(object):
                 text = await r.text()
             try:
                 data = json.loads(text)
-            except json.decoder.JSONDecodeError as e:
+            except Exception as e:
                 logging.error('Bad JSON from api: {}\n {}'.format(e, text))
                 raise
             if data:
@@ -626,7 +626,7 @@ class GoogleApi(object):
             from_cache = False
         try:
             data = json.loads(text)
-        except json.decoder.JSONDecodeError as e:
+        except Exception as e:
             logging.error('Bad JSON from api: {}\n {}'.format(e, text))
             if from_cache:
                 del self.cache_db[id]
