@@ -382,7 +382,7 @@ class Path(object):
                     pano_point = Point(lat=float(location['lat']), lng=float(location['lng']))
                     point_pair, c_point, dist = find_closest_point_pair(self.route_points[last_point_index:], pano_point)
 
-                    if dist > 15:
+                    if dist > 25:
                         logging.debug("Distance {} to nearest point too great for pano: {}"
                                       .format(dist, location['panoId']))
                         last_pano = None
