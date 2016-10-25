@@ -1,5 +1,7 @@
 attrs
 aiohttp
+aioauth-client
+cachetools
 htmlwrite
 msgpack-python
 more-itertools

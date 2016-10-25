@@ -18,7 +18,7 @@ defaults_yaml = """
     inet_port: 6841
     debugtoolbar: False
     aioserver_debug: False
-    paths_path: data/paths
+    data_path: data
     api_cache_db: data/api_cache
 
 
@@ -98,7 +98,9 @@ def main():
     loop = asyncio.get_event_loop()
 
     with contextlib.suppress(FileExistsError):
-        os.mkdir(settings['paths_path'])
+        os.mkdir(settings['data_path'])
+    with contextlib.suppress(FileExistsError):
+        os.mkdir(os.path.join(settings['data_path'], 'paths'))
 
     with contextlib.ExitStack() as stack:
         google_api = stack.enter_context(path_view.core.GoogleApi(settings['api_key'], settings['api_cache_db'], asyncio.get_event_loop()))

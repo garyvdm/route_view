@@ -2,16 +2,20 @@ import logging
 import hashlib
 import json
 import pkg_resources
-import uuid
 import os
 from collections import defaultdict
 from functools import partial
+import io
 
+from htmlwrite import Writer, Tag
+from markupsafe import Markup
 import attr
 from aiohttp import web, MsgType
 from slugify import slugify
 
 from path_view.core import Path, Point
+import path_view.auth
+from path_view.util import mk_id
 
 
 def make_aio_app(loop, settings, google_api):
@@ -31,15 +35,43 @@ def make_aio_app(loop, settings, google_api):
             aiohttp_debugtoolbar.setup(app, **settings.get('debugtoolbar_settings', {}))
 
     add_static = partial(add_static_resource, app)
-    add_static('static/upload_form.html', '/', content_type='text/html', charset='utf8',)
     add_static('static/view.html', '/view/{path_id}/', content_type='text/html', charset='utf8',)
     add_static('static/view.js', '/static/view.js', content_type='application/javascript', charset='utf8',)
     add_static('static/media-playback-start-symbolic.png', '/static/play.png', content_type='image/png')
     add_static('static/media-playback-pause-symbolic.png', '/static/pause.png', content_type='image/png')
 
+    app.router.add_route('GET', '/', home)
     app.router.add_route('POST', '/upload', upload_path)
     app.router.add_route('*', '/path_sock/{path_id}/', handler=path_ws, name='path_ws')
+    path_view.auth.config_aio_app(app, settings)
     return app
+
+
+async def home(request):
+    writer = Writer(io.StringIO())
+    w = writer.w
+    c = writer.c
+    w(Markup('<!DOCTYPE html>'))
+    with c(Tag('html')):
+        with c(Tag('head')):
+            w(Tag('title', c='Path View'))
+        with c(Tag('body')):
+            await path_view.auth.render_login(request, writer)
+            w(Tag('br'))
+            with c(Tag('form', action="/upload", method="post", accept_charset="utf-8", enctype="multipart/form-data")):
+                w(Tag('label', for_="gpx", c='GPX 1.1 File:'))
+                w(Tag('input', id="gpx", name="gpx", type="file", value=""))
+                w(Tag('input', type="submit", value="submit"))
+
+            user = await path_view.auth.get_user_or_login(request)
+            if user.paths:
+                w(Tag('h5', c='Paths'))
+                for path_id in user.paths:
+                    path = await load_path(request.app, path_id)
+                    with c(Tag('li')):
+                        w(Tag('a', href='/view/{}/'.format(path_id), c=path.name))
+
+    return web.Response(text=writer.out_file.getvalue(), content_type='text/html')
 
 
 async def app_cancel_processing(app):
@@ -81,15 +113,28 @@ async def upload_path(request):
     upload_file = data['gpx'].file.read()
     name = data['gpx'].filename
     app = request.app
-    path_id = str(uuid.uuid4())
-    path_dir_path = os.path.join(app['path_view.settings']['paths_path'], path_id)
+    path_id = mk_id()
+    path_dir_path = os.path.join(app['path_view.settings']['data_path'], 'paths', path_id)
     path = Path(id=path_id, name=name, dir_path=path_dir_path,
                 change_callback=partial(change_callback, request.app['path_view.paths_sessions'][path_id]),
                 google_api=app['path_view.google_api'])
     app['path_view.paths'][path_id] = path
     await path.load_route_from_gpx(upload_file)
     await path.start_processing()
+    user = await path_view.auth.get_user_or_login(request)
+    user.paths.append(path_id)
+    await user.save()
     return web.HTTPFound('/view/{}/'.format(path_id))
+
+
+async def load_path(app, path_id):
+    path = app['path_view.paths'].get(path_id)
+    if path is None:
+        path_dir_path = os.path.join(app['path_view.settings']['data_path'], 'paths', path_id)
+        path = await (Path.load(path_id, path_dir_path, partial(change_callback, app['path_view.paths_sessions'][path_id])))
+        path.google_api = app['path_view.google_api']
+        app['path_view.paths'][path_id] = path
+    return path
 
 
 async def path_ws(request):
@@ -97,13 +142,8 @@ async def path_ws(request):
     await ws.prepare(request)
 
     path_id = request.match_info['path_id']
-    path = request.app['path_view.paths'].get(path_id)
-    if path is None:
-        path_dir_path = os.path.join(request.app['path_view.settings']['paths_path'], path_id)
-        path = await (Path.load(path_id, path_dir_path, partial(change_callback, request.app['path_view.paths_sessions'][path_id])))
-        path.google_api = request.app['path_view.google_api']
-        request.app['path_view.paths'][path_id] = path
-        await path.ensure_data_loaded()
+    path = await load_path(request.app, path_id)
+    await path.ensure_data_loaded()
 
     path_sessions = request.app['path_view.paths_sessions'][path_id]
     path_sessions.append(ws)

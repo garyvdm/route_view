@@ -28,15 +28,9 @@ from numpy import (
     rad2deg,
 )
 
-
-def runs_in_executor(fn):
-
-    @functools.wraps(fn)
-    async def runs_in_executor_inner(*args, **kwargs):
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, functools.partial(fn, *args, **kwargs))
-
-    return runs_in_executor_inner
+from path_view.util import (
+    runs_in_executor,
+)
 
 
 @attr.s(slots=True)
