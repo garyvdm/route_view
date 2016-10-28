@@ -1,7 +1,7 @@
 import unittest
 import textwrap
 
-from path_view.core import gpx_get_points, IndexedPoint
+from route_view.core import gpx_get_points, IndexedPoint
 
 
 class TestGpx(unittest.TestCase):

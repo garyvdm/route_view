@@ -3,13 +3,13 @@ import functools
 import asyncio
 import logging
 
-import path_view
+import route_view
 
 logging.basicConfig(level=logging.DEBUG)
 
 
 def suite():
-    tests = unittest.defaultTestLoader.discover(path_view.__path__[0])
+    tests = unittest.defaultTestLoader.discover(route_view.__path__[0])
     return unittest.TestSuite(tests)
 
 

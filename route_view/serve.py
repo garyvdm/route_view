@@ -9,8 +9,8 @@ import os
 import uvloop
 import yaml
 
-import path_view.web_app
-import path_view.core
+import route_view.web_app
+import route_view.core
 
 defaults_yaml = """
     server_type: inet
@@ -39,9 +39,9 @@ defaults_yaml = """
             handlers: [console, ]
 
         loggers:
-            path_view:
+            route_view:
                  level: INFO
-                 qualname: path_view
+                 qualname: route_view
 
             aiohttp:
                  level: INFO
@@ -56,12 +56,12 @@ defaults_yaml = """
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('settings_file', action='store', nargs='?', default='/etc/path_view.yaml',
+    parser.add_argument('settings_file', action='store', nargs='?', default='/etc/route_view.yaml',
                         help='File to load settings from.')
     parser.add_argument('--inet', action='store',
                         help='Host address and port to listen on. (format: host:port)')
     parser.add_argument('--unix', action='store',
-                        help='Path of unix socket to listen on. ')
+                        help='Route of unix socket to listen on. ')
     parser.add_argument('--dev', action='store_true',
                         help='Enable development tools (e.g. debug toolbar.)')
     parser.add_argument('--api-key', action='store',
@@ -87,7 +87,7 @@ def main():
         settings['inet_port'] = port
     if args.unix:
         settings['server_type'] = 'unix'
-        settings['unix_path'] = args.unix
+        settings['unix_route'] = args.unix
     if args.dev:
         settings['debugtoolbar'] = True
         settings['aioserver_debug'] = True
@@ -100,10 +100,10 @@ def main():
     with contextlib.suppress(FileExistsError):
         os.mkdir(settings['data_path'])
     with contextlib.suppress(FileExistsError):
-        os.mkdir(os.path.join(settings['data_path'], 'paths'))
+        os.mkdir(os.path.join(settings['data_path'], 'routes'))
 
     with contextlib.ExitStack() as stack:
-        google_api = stack.enter_context(path_view.core.GoogleApi(settings['api_key'], settings['api_cache_db'], asyncio.get_event_loop()))
+        google_api = stack.enter_context(route_view.core.GoogleApi(settings['api_key'], settings['api_cache_db'], asyncio.get_event_loop()))
 
         stack.enter_context(web_serve_cm(loop, settings, google_api))
         try:
@@ -116,14 +116,14 @@ def main():
 
 @contextlib.contextmanager
 def web_serve_cm(loop, settings, google_api):
-    app = path_view.web_app.make_aio_app(loop, settings, google_api)
+    app = route_view.web_app.make_aio_app(loop, settings, google_api)
 
     handler = app.make_handler(debug=settings.get('aioserver_debug', False))
 
     if settings['server_type'] == 'inet':
         srv = loop.run_until_complete(loop.create_server(handler, settings['inet_host'], settings['inet_port']))
     elif settings['server_type'] == 'unix':
-        srv = loop.run_until_complete(loop.create_unix_server(handler, settings['unix_path']))
+        srv = loop.run_until_complete(loop.create_unix_server(handler, settings['unix_route']))
 
     for sock in srv.sockets:
         if sock.family in (socket.AF_INET, socket.AF_INET6):
@@ -135,7 +135,7 @@ def web_serve_cm(loop, settings, google_api):
     try:
         yield
     finally:
-        loop.run_until_complete(path_view.web_app.app_cancel_processing(app))
+        loop.run_until_complete(route_view.web_app.app_cancel_processing(app))
         loop.run_until_complete(handler.finish_connections(1.0))
         srv.close()
         loop.run_until_complete(srv.wait_closed())

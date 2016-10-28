@@ -38,9 +38,9 @@ document.addEventListener('DOMContentLoaded', function() {
     var pano_rotate_contain = document.getElementById('pano_rotate_contain');
     var no_images = document.getElementById('no_images');
 
-    var split_path_name = window.location.pathname.split('/');
-    var path_id = split_path_name[split_path_name.length - 2];
-    var ws = new WebSocket('ws://' + location.host + '/path_sock/' + path_id + '/');
+    var split_route_name = window.location.pathname.split('/');
+    var route_id = split_route_name[split_route_name.length - 2];
+    var ws = new WebSocket('ws://' + location.host + '/route_sock/' + route_id + '/');
     var panos = [];
     var api_key = '';
     var route_points = [];

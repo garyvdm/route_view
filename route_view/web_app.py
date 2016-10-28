@@ -13,18 +13,18 @@ import attr
 from aiohttp import web, MsgType
 from slugify import slugify
 
-from path_view.core import Path, Point
-import path_view.auth
-from path_view.util import mk_id
+from route_view.core import Route, Point
+import route_view.auth
+from route_view.util import mk_id
 
 
 def make_aio_app(loop, settings, google_api):
     app = web.Application(loop=loop)
-    app['path_view.settings'] = settings
-    app['path_view.google_api'] = google_api
-    app['path_view.static_etags'] = {}
-    app['path_view.paths'] = {}
-    app['path_view.paths_sessions'] = defaultdict(list)
+    app['route_view.settings'] = settings
+    app['route_view.google_api'] = google_api
+    app['route_view.static_etags'] = {}
+    app['route_view.routes'] = {}
+    app['route_view.routes_sessions'] = defaultdict(list)
 
     if settings['debugtoolbar']:
         try:
@@ -35,15 +35,15 @@ def make_aio_app(loop, settings, google_api):
             aiohttp_debugtoolbar.setup(app, **settings.get('debugtoolbar_settings', {}))
 
     add_static = partial(add_static_resource, app)
-    add_static('static/view.html', '/view/{path_id}/', content_type='text/html', charset='utf8',)
+    add_static('static/view.html', '/view/{route_id}/', content_type='text/html', charset='utf8',)
     add_static('static/view.js', '/static/view.js', content_type='application/javascript', charset='utf8',)
     add_static('static/media-playback-start-symbolic.png', '/static/play.png', content_type='image/png')
     add_static('static/media-playback-pause-symbolic.png', '/static/pause.png', content_type='image/png')
 
     app.router.add_route('GET', '/', home)
-    app.router.add_route('POST', '/upload', upload_path)
-    app.router.add_route('*', '/path_sock/{path_id}/', handler=path_ws, name='path_ws')
-    path_view.auth.config_aio_app(app, settings)
+    app.router.add_route('POST', '/upload', upload_route)
+    app.router.add_route('*', '/route_sock/{route_id}/', handler=route_ws, name='route_ws')
+    route_view.auth.config_aio_app(app, settings)
     return app
 
 
@@ -54,40 +54,40 @@ async def home(request):
     w(Markup('<!DOCTYPE html>'))
     with c(Tag('html')):
         with c(Tag('head')):
-            w(Tag('title', c='Path View'))
+            w(Tag('title', c='Route View'))
         with c(Tag('body')):
-            await path_view.auth.render_login(request, writer)
+            await route_view.auth.render_login(request, writer)
             w(Tag('br'))
             with c(Tag('form', action="/upload", method="post", accept_charset="utf-8", enctype="multipart/form-data")):
                 w(Tag('label', for_="gpx", c='GPX 1.1 File:'))
                 w(Tag('input', id="gpx", name="gpx", type="file", value=""))
                 w(Tag('input', type="submit", value="submit"))
 
-            user = await path_view.auth.get_user_or_login(request)
-            if user.paths:
-                w(Tag('h5', c='Paths'))
-                for path_id in user.paths:
-                    path = await load_path(request.app, path_id)
+            user = await route_view.auth.get_user_or_login(request)
+            if user.routes:
+                w(Tag('h5', c='Routes'))
+                for route_id in user.routes:
+                    route = await load_route(request.app, route_id)
                     with c(Tag('li')):
-                        w(Tag('a', href='/view/{}/'.format(path_id), c=path.name))
+                        w(Tag('a', href='/view/{}/'.format(route_id), c=route.name))
 
     return web.Response(text=writer.out_file.getvalue(), content_type='text/html')
 
 
 async def app_cancel_processing(app):
-    for path in app['path_view.paths'].values():
-        if path.process_task:
-            path.process_task.cancel()
-    for path in app['path_view.paths'].values():
-        if path.process_task:
+    for route in app['route_view.routes'].values():
+        if route.process_task:
+            route.process_task.cancel()
+    for route in app['route_view.routes'].values():
+        if route.process_task:
             try:
-                await path.process_task
+                await route.process_task
             except Exception:
                 pass
 
 
-def add_static_resource(app, resource_name, path, *args, **kwargs):
-    body = pkg_resources.resource_string('path_view', resource_name)
+def add_static_resource(app, resource_name, route, *args, **kwargs):
+    body = pkg_resources.resource_string('route_view', resource_name)
     body_processor = kwargs.pop('body_processor', None)
     if body_processor:
         body = body_processor(app, body)
@@ -95,7 +95,7 @@ def add_static_resource(app, resource_name, path, *args, **kwargs):
     headers = kwargs.setdefault('headers', {})
     etag = hashlib.sha1(body).hexdigest()
     headers['ETag'] = etag
-    app['path_view.static_etags'][resource_name] = etag
+    app['route_view.static_etags'][resource_name] = etag
 
     def static_resource_handler(request):
         if request.headers.get('If-None-Match', '') == etag:
@@ -104,53 +104,53 @@ def add_static_resource(app, resource_name, path, *args, **kwargs):
             # TODO check etag query string
             return web.Response(*args, **kwargs)
 
-    # path = path.format(etag[:6])
-    app.router.add_route('GET', path, static_resource_handler, name=slugify(resource_name))
+    # route = route.format(etag[:6])
+    app.router.add_route('GET', route, static_resource_handler, name=slugify(resource_name))
     return static_resource_handler
 
-async def upload_path(request):
+async def upload_route(request):
     data = await request.post()
     upload_file = data['gpx'].file.read()
     name = data['gpx'].filename
     app = request.app
-    path_id = mk_id()
-    path_dir_path = os.path.join(app['path_view.settings']['data_path'], 'paths', path_id)
-    path = Path(id=path_id, name=name, dir_path=path_dir_path,
-                change_callback=partial(change_callback, request.app['path_view.paths_sessions'][path_id]),
-                google_api=app['path_view.google_api'])
-    app['path_view.paths'][path_id] = path
-    await path.load_route_from_gpx(upload_file)
-    await path.start_processing()
-    user = await path_view.auth.get_user_or_login(request)
-    user.paths.append(path_id)
+    route_id = mk_id()
+    route_dir_route = os.path.join(app['route_view.settings']['data_path'], 'routes', route_id)
+    route = Route(id=route_id, name=name, dir_route=route_dir_route,
+                change_callback=partial(change_callback, request.app['route_view.routes_sessions'][route_id]),
+                google_api=app['route_view.google_api'])
+    app['route_view.routes'][route_id] = route
+    await route.load_route_from_gpx(upload_file)
+    await route.start_processing()
+    user = await route_view.auth.get_user_or_login(request)
+    user.routes.append(route_id)
     await user.save()
-    return web.HTTPFound('/view/{}/'.format(path_id))
+    return web.HTTPFound('/view/{}/'.format(route_id))
 
 
-async def load_path(app, path_id):
-    path = app['path_view.paths'].get(path_id)
-    if path is None:
-        path_dir_path = os.path.join(app['path_view.settings']['data_path'], 'paths', path_id)
-        path = await (Path.load(path_id, path_dir_path, partial(change_callback, app['path_view.paths_sessions'][path_id])))
-        path.google_api = app['path_view.google_api']
-        app['path_view.paths'][path_id] = path
-    return path
+async def load_route(app, route_id):
+    route = app['route_view.routes'].get(route_id)
+    if route is None:
+        route_dir_route = os.path.join(app['route_view.settings']['data_path'], 'routes', route_id)
+        route = await (Route.load(route_id, route_dir_route, partial(change_callback, app['route_view.routes_sessions'][route_id])))
+        route.google_api = app['route_view.google_api']
+        app['route_view.routes'][route_id] = route
+    return route
 
 
-async def path_ws(request):
+async def route_ws(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
 
-    path_id = request.match_info['path_id']
-    path = await load_path(request.app, path_id)
-    await path.ensure_data_loaded()
+    route_id = request.match_info['route_id']
+    route = await load_route(request.app, route_id)
+    await route.ensure_data_loaded()
 
-    path_sessions = request.app['path_view.paths_sessions'][path_id]
-    path_sessions.append(ws)
+    route_sessions = request.app['route_view.routes_sessions'][route_id]
+    route_sessions.append(ws)
 
     # Send initial data.
-    ws.send_str(json.dumps({'api_key': request.app['path_view.google_api'].api_key}))
-    for msg in path.get_existing_changes():
+    ws.send_str(json.dumps({'api_key': request.app['route_view.google_api'].api_key}))
+    for msg in route.get_existing_changes():
         ws.send_str(json.dumps(msg, default=json_encode))
 
     try:
@@ -159,24 +159,24 @@ async def path_ws(request):
                 data = json.loads(msg.data)
                 # logging.debug(data)
                 if data == 'cancel':
-                    await path.cancel_processing()
+                    await route.cancel_processing()
                 if data == 'resume':
-                    await path.resume_processing()
+                    await route.resume_processing()
                 if isinstance(data, dict) and 'add_pano_chain_item' in data:
-                    await path.add_pano_chain_item(*data['add_pano_chain_item'])
+                    await route.add_pano_chain_item(*data['add_pano_chain_item'])
             if msg.tp == MsgType.close:
                 await ws.close()
             if msg.tp == MsgType.error:
                 raise ws.exception()
     finally:
-        path_sessions.remove(ws)
+        route_sessions.remove(ws)
     return ws
 
 
-def change_callback(path_sessions, change):
+def change_callback(route_sessions, change):
     msg = json.dumps(change, default=json_encode)
     # logging.debug(str(change)[:120])
-    for session in path_sessions:
+    for session in route_sessions:
         try:
             session.send_str(msg)
         except:

@@ -13,7 +13,7 @@ from aioauth_client import (
     ClientRegistry,
 )
 
-from path_view.util import (
+from route_view.util import (
     mk_id,
     runs_in_executor,
 )
@@ -48,14 +48,14 @@ class StravaClient(OAuth2Client):
 @attr.s
 class StorageType(object):
     app = attr.ib()
-    path = attr.ib()
+    route = attr.ib()
     id = attr.ib()
 
-    no_save_attrs = {'app', 'path'}
+    no_save_attrs = {'app', 'route'}
 
     @classmethod
     async def load(cls, app, id):
-        cache = app['path_view.{}_cache'.format(cls.type_name)]
+        cache = app['route_view.{}_cache'.format(cls.type_name)]
         try:
             return cache[id]
         except KeyError:
@@ -66,19 +66,19 @@ class StorageType(object):
     @classmethod
     @runs_in_executor
     def _load(cls, app, id):
-        path = os.path.join(app['path_view.{}_path'.format(cls.type_name)], id)
+        route = os.path.join(app['route_view.{}_route'.format(cls.type_name)], id)
         try:
-            with open(path, 'r') as f:
+            with open(route, 'r') as f:
                 data = yaml.load(f)
-            return cls(app, path, **data)
+            return cls(app, route, **data)
         except FileNotFoundError:
-            login = cls(app, path, id)
+            login = cls(app, route, id)
             return login
 
     @runs_in_executor
     def save(self):
         data = attr.asdict(self, filter=lambda a, v: a.name not in self.no_save_attrs)
-        with open(self.path, 'w') as f:
+        with open(self.route, 'w') as f:
             yaml.dump(data, f)
 
 
@@ -86,7 +86,7 @@ class StorageType(object):
 class Login(StorageType):
     type_name = 'logins'
     user_id = attr.ib(default=None)
-    paths = attr.ib(default=attr.Factory(list))
+    routes = attr.ib(default=attr.Factory(list))
     creation_timestamp = attr.ib(default=attr.Factory(datetime.datetime.now))
     access_timestamp = attr.ib(default=attr.Factory(lambda: datetime.datetime.fromtimestamp(0)))
     access_timestamp_change_delta = datetime.timedelta(hours=1)
@@ -110,7 +110,7 @@ class User(StorageType):
     primary_oauthid = attr.ib(default=None)
     oauth_details = attr.ib(default=attr.Factory(dict))
     tokens = attr.ib(default=attr.Factory(dict))
-    paths = attr.ib(default=attr.Factory(list))
+    routes = attr.ib(default=attr.Factory(list))
 
 
 async def login_middleware_factory(app, handler):
@@ -122,29 +122,29 @@ async def login_middleware_factory(app, handler):
 
         login = await Login.load(app, login_id)
         await login.access()
-        request['path_view.login'] = login
-        request['path_view.login_needs_to_be_set'] = login_needs_to_be_set
+        request['route_view.login'] = login
+        request['route_view.login_needs_to_be_set'] = login_needs_to_be_set
         return await handler(request)
     return login_middleware
 
 
 async def login_on_prepare(request, response):
-    if request['path_view.login_needs_to_be_set']:
-        response.set_cookie('login', request['path_view.login'].id)
+    if request['route_view.login_needs_to_be_set']:
+        response.set_cookie('login', request['route_view.login'].id)
 
 
 def config_aio_app(app, settings):
     data_path = settings['data_path']
     storage_types = (Login, User, OAuthID)
-    app['path_view.oauth_providers'] = settings['oauth_providers']
-    app['path_view.oauth_providers_by_name'] = {provider['name']: provider for provider in settings['oauth_providers']}
+    app['route_view.oauth_providers'] = settings['oauth_providers']
+    app['route_view.oauth_providers_by_name'] = {provider['name']: provider for provider in settings['oauth_providers']}
 
     for cls in storage_types:
-        path = os.path.join(data_path, cls.type_name)
+        route = os.path.join(data_path, cls.type_name)
         with contextlib.suppress(FileExistsError):
-            os.mkdir(path)
-        app['path_view.{}_path'.format(cls.type_name)] = path
-        app['path_view.{}_cache'.format(cls.type_name)] = cachetools.LRUCache(128)
+            os.mkdir(route)
+        app['route_view.{}_route'.format(cls.type_name)] = route
+        app['route_view.{}_cache'.format(cls.type_name)] = cachetools.LRUCache(128)
 
     app.middlewares.append(login_middleware_factory)
     app.on_response_prepare.append(login_on_prepare)
@@ -156,11 +156,11 @@ def config_aio_app(app, settings):
 async def render_login(request, writer):
     c = writer.c
     w = writer.w
-    login = request['path_view.login']
+    login = request['route_view.login']
     with c(Tag('div', class_='login')):
         if login.user_id is None:
             w('You are not logged in. It is recommended you login so that you can easily find your routes in the future. Click one of the links to login: ')
-            for provider in request.app['path_view.oauth_providers']:
+            for provider in request.app['route_view.oauth_providers']:
                 w(Tag('a', href='/oauth/{}'.format(provider['name']), c=provider['display_name']))
             w(Tag('br'))
             w('Tip: if you login with Strava, you will be able to import routes and activities from Strava.')
@@ -172,14 +172,14 @@ async def render_login(request, writer):
             w(Tag('a', href='/logout', c='Logout'))
 
 async def get_user_or_login(request):
-    login = request['path_view.login']
+    login = request['route_view.login']
     if login.user_id:
         return await User.load(request.app, login.user_id)
     return login
 
 
 async def oauth(request):
-    providers_by_name = request.app['path_view.oauth_providers_by_name']
+    providers_by_name = request.app['route_view.oauth_providers_by_name']
     provider = request.match_info.get('provider')
     if provider not in providers_by_name:
         raise web.HTTPNotFound(reason='Unknown provider')
@@ -219,7 +219,7 @@ async def oauth(request):
     if oauthid.user_id is None:
         oauthid.user_id = mk_id()
         await oauthid.save()
-    login = request['path_view.login']
+    login = request['route_view.login']
     login.user_id = oauthid.user_id
     user = await User.load(request.app, oauthid.user_id)
     if user.primary_oauthid is None:
@@ -232,7 +232,7 @@ async def oauth(request):
 
 
 async def logout(request):
-    login = request['path_view.login']
+    login = request['route_view.login']
     login.user_id = None
     await login.save()
     return web.HTTPFound('/')

@@ -28,7 +28,7 @@ from numpy import (
     rad2deg,
 )
 
-from path_view.util import (
+from route_view.util import (
     runs_in_executor,
 )
 
@@ -58,15 +58,15 @@ class IndexedPoint(Point):
         return Point(self.lat, self.lng)
 
 
-path_meta_attrs = {'name'}
-path_route_attrs = {'route_points', 'route_bounds', 'pano_chain'}
-path_status_attrs = {'processing_complete', 'processing_status'}
+route_meta_attrs = {'name'}
+route_route_attrs = {'route_points', 'route_bounds', 'pano_chain'}
+route_status_attrs = {'processing_complete', 'processing_status'}
 
 
 @attr.s
-class Path(object):
+class Route(object):
     id = attr.ib()
-    dir_path = attr.ib()
+    dir_route = attr.ib()
     change_callback = attr.ib()
     name = attr.ib(default=None)
     process_task = attr.ib(default=None, init=False)
@@ -83,27 +83,27 @@ class Path(object):
 
     @classmethod
     @runs_in_executor
-    def load(cls, id, dir_path, new_pano_callback):
-        with open(os.path.join(dir_path, 'meta.json'), 'r') as f:
+    def load(cls, id, dir_route, new_pano_callback):
+        with open(os.path.join(dir_route, 'meta.json'), 'r') as f:
             meta = json.load(f)
-        return Path(id, dir_path, new_pano_callback, **meta)
+        return Route(id, dir_route, new_pano_callback, **meta)
 
     @runs_in_executor
     def ensure_data_loaded(self):
         # TODO resume processing if not complete
         if not self.data_loaded:
-            with open(os.path.join(self.dir_path, 'route.pack'), 'rb') as f:
+            with open(os.path.join(self.dir_route, 'route.pack'), 'rb') as f:
                 route = msgpack.unpack(f, encoding='utf-8')
-            route['route_points'] = path_with_distance_and_index(route['route_points'])
+            route['route_points'] = route_with_distance_and_index(route['route_points'])
 
-            with open(os.path.join(self.dir_path, 'status.json'), 'r') as f:
+            with open(os.path.join(self.dir_route, 'status.json'), 'r') as f:
                 status = json.load(f)
 
             for k, v in itertools.chain(route.items(), status.items()):
                 setattr(self, k, v)
 
             panos = []
-            with open(os.path.join(self.dir_path, 'panos.pack'), 'rb') as f:
+            with open(os.path.join(self.dir_route, 'panos.pack'), 'rb') as f:
                 unpacker = msgpack.Unpacker(f, encoding='utf-8')
                 while True:
                     try:
@@ -123,8 +123,8 @@ class Path(object):
 
     @runs_in_executor
     def save_metadata(self):
-        meta = attr.asdict(self, filter=lambda a, v: a.name in path_meta_attrs)
-        with open(os.path.join(self.dir_path, 'meta.json'), 'w') as f:
+        meta = attr.asdict(self, filter=lambda a, v: a.name in route_meta_attrs)
+        with open(os.path.join(self.dir_route, 'meta.json'), 'w') as f:
             json.dump(meta, f)
 
     @runs_in_executor
@@ -132,16 +132,16 @@ class Path(object):
         def json_encode(obj):
             if isinstance(obj, Point):
                 return (obj.lat, obj.lng)
-            if isinstance(obj, Path):
-                return attr.asdict(obj, recurse=False, filter=lambda a, v: a.name in path_route_attrs)
+            if isinstance(obj, Route):
+                return attr.asdict(obj, recurse=False, filter=lambda a, v: a.name in route_route_attrs)
 
-        with open(os.path.join(self.dir_path, 'route.pack'), 'wb') as f:
+        with open(os.path.join(self.dir_route, 'route.pack'), 'wb') as f:
             msgpack.pack(self, f, default=json_encode)
 
     @runs_in_executor
     def clear_saved_panos(self):
         with self.save_processing_lock:
-            with open(os.path.join(self.dir_path, 'panos.pack'), 'wb'):
+            with open(os.path.join(self.dir_route, 'panos.pack'), 'wb'):
                 pass
             self.panos_len_at_last_save = 0
 
@@ -150,8 +150,8 @@ class Path(object):
         def state_json_encode(obj):
             if isinstance(obj, Point):
                 return (obj.lat, obj.lng)
-            if isinstance(obj, Path):
-                return attr.asdict(obj, recurse=False, filter=lambda a, v: a.name in path_status_attrs)
+            if isinstance(obj, Route):
+                return attr.asdict(obj, recurse=False, filter=lambda a, v: a.name in route_status_attrs)
 
         def panos_json_encode(obj):
             if isinstance(obj, Point):
@@ -159,18 +159,18 @@ class Path(object):
 
         with self.save_processing_lock:
 
-            with open(os.path.join(self.dir_path, 'status.json'), 'w') as f:
+            with open(os.path.join(self.dir_route, 'status.json'), 'w') as f:
                 json.dump(self, f, default=state_json_encode)
 
-            with open(os.path.join(self.dir_path, 'panos.pack'), 'ab') as f:
+            with open(os.path.join(self.dir_route, 'panos.pack'), 'ab') as f:
                 for pano in self.panos[self.panos_len_at_last_save:]:
                     msgpack.pack(pano, f, default=panos_json_encode)
             self.panos_len_at_last_save = len(self.panos)
 
     async def load_route_from_gpx(self, gpx):
-        os.mkdir(self.dir_path)
+        os.mkdir(self.dir_route)
         await self.save_metadata()
-        with open(os.path.join(self.dir_path, 'upload.gpx'), 'wb') as f:
+        with open(os.path.join(self.dir_route, 'upload.gpx'), 'wb') as f:
             f.write(gpx)
         await self.set_route_points(gpx_get_points(gpx))
 
@@ -293,7 +293,7 @@ class Path(object):
 
             while True:
                 if no_pano_link:
-                    points_with_set_spacing = iter_path_points_with_set_spacing(
+                    points_with_set_spacing = iter_route_points_with_set_spacing(
                         inverse_line_cached, [last_point] + self.route_points[last_point_index + 1:],
                         spacing=itertools.chain(itertools.repeat(10, 4), itertools.repeat(20, 3),
                                                 itertools.repeat(60, 10), itertools.repeat(100, 10),
@@ -301,7 +301,7 @@ class Path(object):
                     if last_point == self.route_points[0]:
                         points_with_set_spacing = itertools.chain(((last_point, last_point, 0, 10), ), points_with_set_spacing)
 
-                    points_with_set_spacing_for_no_images = peekable(iter_path_points_with_set_spacing(
+                    points_with_set_spacing_for_no_images = peekable(iter_route_points_with_set_spacing(
                         inverse_line_cached, [last_point] + self.route_points[last_point_index + 1:],
                         spacing=20))
 
@@ -309,7 +309,7 @@ class Path(object):
                     no_image_start_index = last_point_index + 1
                     no_image_start_distance = last_at_distance
 
-                    for point, last_path_point, dist_from_last, point_dist in points_with_set_spacing:
+                    for point, last_route_point, dist_from_last, point_dist in points_with_set_spacing:
                         radius = round(point_dist * 0.75)
                         logging.debug("Get pano at {} radius={}".format(point, radius))
                         pano_data = await google_api.get_pano_ll(point, radius=radius)
@@ -344,7 +344,7 @@ class Path(object):
                     else:
                         if last_point_index + 2 == len(self.route_points) and distance(last_point, self.route_points[-1]) < 10:
                             break
-                        yaw_to_next = get_azimuth_to_distance_on_path(inverse_line_cached, last_point, self.route_points[last_point_index + 1:], 10)
+                        yaw_to_next = get_azimuth_to_distance_on_route(inverse_line_cached, last_point, self.route_points[last_point_index + 1:], 10)
                         yaw_diff = lambda item: abs(deg_wrap_to_closest(float(item['yawDeg']) - yaw_to_next, 0))
                         links = last_pano_data.get('Links')
                         if links:
@@ -382,7 +382,7 @@ class Path(object):
                         last_pano = None
                         no_pano_link = True
                     else:
-                        heading = get_azimuth_to_distance_on_path(inverse_line_cached, c_point, self.route_points[point_pair[1].index:], 50)
+                        heading = get_azimuth_to_distance_on_route(inverse_line_cached, c_point, self.route_points[point_pair[1].index:], 50)
                         c_point_dist = point_pair[0].distance + distance(point_pair[0], c_point)
                         distance_from_last = c_point_dist - last_at_distance
 
@@ -438,11 +438,11 @@ gpx_ns = {
 def gpx_get_points(gpx):
     doc = xml.fromstring(gpx)
     trkpts = doc.findall('./gpx11:trk/gpx11:trkseg/gpx11:trkpt', gpx_ns)
-    points = path_with_distance_and_index((float(trkpt.attrib['lat']), float(trkpt.attrib['lon'])) for trkpt in trkpts)
+    points = route_with_distance_and_index((float(trkpt.attrib['lat']), float(trkpt.attrib['lon'])) for trkpt in trkpts)
     return points
 
 
-def path_with_distance_and_index(path):
+def route_with_distance_and_index(route):
     dist = 0
     previous_point = None
 
@@ -456,7 +456,7 @@ def path_with_distance_and_index(path):
         previous_point = point
         return point
 
-    return [get_point(i, point) for i, point in enumerate(path)]
+    return [get_point(i, point) for i, point in enumerate(route)]
 
 
 def pairs(items):
@@ -509,7 +509,7 @@ def find_closest_point_pair(points, to_point, req_min_dist=20, stop_after_dist=5
     return min_point_pair, min_c_point, min_distance
 
 
-def iter_path_points_with_set_spacing(inverse_line_cached, points, spacing=10):
+def iter_route_points_with_set_spacing(inverse_line_cached, points, spacing=10):
     distance_covered = 0
     try:
         spacing = iter(spacing)
@@ -548,10 +548,10 @@ def point_from_distance_and_azimuth(point, distance, azimuth):
     return Point(lat=geo['lat2'], lng=geo['lon2'])
 
 
-def geo_from_distance_on_path(inverse_line_cached, path, dist):
+def geo_from_distance_on_route(inverse_line_cached, route, dist):
     distance_covered = 0
     first_pair = True
-    for point1, point2, in pairs(path):
+    for point1, point2, in pairs(route):
         pair_geo_line = inverse_line_cached(point1.lat, point1.lng, point2.lat, point2.lng)
         if distance_covered + pair_geo_line.s13 < dist:
             distance_covered += pair_geo_line.s13
@@ -559,13 +559,13 @@ def geo_from_distance_on_path(inverse_line_cached, path, dist):
         else:
             geo = pair_geo_line.Position(dist - distance_covered)
             if not first_pair:
-                geo = geodesic.Inverse(path[0].lat, path[0].lng, geo['lat2'], geo['lon2'])
+                geo = geodesic.Inverse(route[0].lat, route[0].lng, geo['lat2'], geo['lon2'])
             return geo
-    return geodesic.Inverse(path[0].lat, path[0].lng, path[-1].lat, path[-1].lng)
+    return geodesic.Inverse(route[0].lat, route[0].lng, route[-1].lat, route[-1].lng)
 
 
-def get_azimuth_to_distance_on_path(inverse_line_cached, from_point, path, dist):
-    to_geo = geo_from_distance_on_path(inverse_line_cached, [from_point] + path, dist)
+def get_azimuth_to_distance_on_route(inverse_line_cached, from_point, route, dist):
+    to_geo = geo_from_distance_on_route(inverse_line_cached, [from_point] + route, dist)
     return to_geo['azi1']
 
 
