@@ -35,7 +35,8 @@ def make_aio_app(loop, settings, google_api):
             aiohttp_debugtoolbar.setup(app, **settings.get('debugtoolbar_settings', {}))
 
     add_static = partial(add_static_resource, app)
-    add_static('static/view.html', '/view/{route_id}/', content_type='text/html', charset='utf8',)
+    add_static('static/view.html', '/view/{route_id}/', content_type='text/html', charset='utf8',
+               body_processor=lambda app, body: body.decode('utf8').format(api_key=settings['api_key']).encode('utf8'))
     add_static('static/view.js', '/static/view.js', content_type='application/javascript', charset='utf8',)
     add_static('static/media-playback-start-symbolic.png', '/static/play.png', content_type='image/png')
     add_static('static/media-playback-pause-symbolic.png', '/static/pause.png', content_type='image/png')
@@ -84,7 +85,6 @@ async def app_cancel_processing(app):
                 await route.process_task
             except Exception:
                 pass
-
 
 def add_static_resource(app, resource_name, route, *args, **kwargs):
     body = pkg_resources.resource_string('route_view', resource_name)
