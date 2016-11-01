@@ -5,6 +5,7 @@ import functools
 import asyncio
 import itertools
 import threading
+import collections
 import xml.etree.ElementTree as xml
 
 import aiohttp
@@ -75,8 +76,8 @@ class Route(object):
     processing_status = attr.ib(default='')
     route_points = attr.ib(default=None, init=False)
     route_bounds = attr.ib(default=None, init=False)
-    panos = attr.ib(default=[], init=False)
-    pano_chain = attr.ib(default={}, init=False)
+    panos = attr.ib(default=attr.Factory(list), init=False)
+    pano_chain = attr.ib(default=attr.Factory(dict), init=False)
     panos_len_at_last_save = attr.ib(default=0, init=False)
     save_processing_lock = attr.ib(default=attr.Factory(threading.Lock), init=False)
     google_api = attr.ib(default=None)
@@ -271,6 +272,7 @@ class Route(object):
                 else:
                     last_pano_data = None
                     no_pano_link = True
+            panos_ids = collections.deque([pano['id'] for pano in self.panos if 'id' in pano][:-10], 10)
 
             last_save_task = None
             inverse_line_cached = functools.lru_cache(32)(geodesic.InverseLine)
@@ -331,7 +333,7 @@ class Route(object):
                                 last_point = no_image_point[0]
                                 last_at_distance = no_image_point[2] + no_image_start_distance
 
-                        if pano_data and not (last_pano and pano_data['Location']['panoId'] == last_pano.get('id')):
+                        if pano_data and pano_data['Location']['panoId'] not in panos_ids:
                             no_pano_link = False
                             break
 
@@ -391,6 +393,7 @@ class Route(object):
                             description=location['description'], prev_route_index=point_pair[0].index, heading=heading,
                             at_dist=c_point_dist, dist_from_last=distance_from_last)
                         new_panos.append(pano)
+                        panos_ids.append(pano['id'])
 
                         # logging.debug("Got pano {} {}".format(pano_point, location['description']))
                         last_pano = pano
