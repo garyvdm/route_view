@@ -64,8 +64,8 @@ class TestPointProcess(unittest.TestCase):
             lmdbtempdir = stack.enter_context(tempfile.TemporaryDirectory())
             lmdb_env = stack.enter_context(lmdb.open(lmdbtempdir, max_dbs=10))
 
-            api = stack.enter_context(GoogleApi(api_key, lmdb_env, asyncio.get_event_loop()))
             tempdir = stack.enter_context(tempfile.TemporaryDirectory())
+            api = GoogleApi(api_key, lmdb_env, asyncio.get_event_loop())
 
             def change_callback(change):
                 pprint.pprint(change)
@@ -75,34 +75,36 @@ class TestPointProcess(unittest.TestCase):
     @unittest_run_loop
     async def test_process1(self):
         with self.process_stack() as (api, tempdir, change_callback):
-            route = Route(None, tempdir, change_callback, name='Test Route', google_api=api)
-            await route.save_metadata()
-            await route.set_route_points(route_with_distance_and_index([
-                (-26.09332, 27.98120),
-                (-26.09326, 27.98112),
-            ]))
-            await route.start_processing()
-            await route.process_task
-            self.assertTrue(route.processing_complete)
+            async with api:
+                route = Route(None, tempdir, change_callback, name='Test Route', google_api=api)
+                await route.save_metadata()
+                await route.set_route_points(route_with_distance_and_index([
+                    (-26.09332, 27.98120),
+                    (-26.09326, 27.98112),
+                ]))
+                await route.start_processing()
+                await route.process_task
+                self.assertTrue(route.processing_complete)
 
-            loaded_route = await Route.load(None, tempdir, change_callback)
-            await loaded_route.ensure_data_loaded()
+                loaded_route = await Route.load(None, tempdir, change_callback)
+                await loaded_route.ensure_data_loaded()
 
-            self.maxDiff = None
-            self.assertEqual(route.route_points, loaded_route.route_points)
-            self.assertEqual(route.panos, loaded_route.panos)
+                self.maxDiff = None
+                self.assertEqual(route.route_points, loaded_route.route_points)
+                self.assertEqual(route.panos, loaded_route.panos)
 
     @unittest_run_loop
     async def test_process2(self):
         # This route would go into an infinate loop at the end. Test to make sure it finishes.
 
         with self.process_stack() as (api, tempdir, change_callback):
-            route = Route(None, tempdir, change_callback, name='Test Route', google_api=api)
-            await route.set_route_points(route_with_distance_and_index([
-                (45.03778, 6.92901),
-                (45.03790, 6.92922),
-                (45.03795, 6.92929),
-            ]))
-            await route.start_processing()
-            await route.process_task
-            self.assertTrue(route.processing_complete)
+            async with api:
+                route = Route(None, tempdir, change_callback, name='Test Route', google_api=api)
+                await route.set_route_points(route_with_distance_and_index([
+                    (45.03778, 6.92901),
+                    (45.03790, 6.92922),
+                    (45.03795, 6.92929),
+                ]))
+                await route.start_processing()
+                await route.process_task
+                self.assertTrue(route.processing_complete)

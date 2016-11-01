@@ -106,7 +106,6 @@ def main():
     with contextlib.ExitStack() as stack:
         lmdb_env = stack.enter_context(lmdb.open(settings['lmdb_path'], max_dbs=10))
         google_api = stack.enter_context(route_view.core.GoogleApi(settings['api_key'], lmdb_env, asyncio.get_event_loop()))
-
         stack.enter_context(web_serve_cm(loop, settings, google_api))
         try:
             loop.run_forever()

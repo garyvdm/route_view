@@ -6,6 +6,7 @@ import asyncio
 import itertools
 import threading
 import collections
+import copy
 import xml.etree.ElementTree as xml
 
 import aiohttp
@@ -587,18 +588,32 @@ class GoogleApi(object):
         self.lmdb_env = lmdb_env
         self.lmdb_db = lmdb_env.open_db(b'api_cache')
         self.loop = loop
+        self.unwriten_cache_items = {}
+        self.has_unwriten_cache_items = asyncio.Event(loop=loop)
 
     def __enter__(self):
+        return self.loop.run_until_complete(self.__aenter__())
+
+    def __exit__(self, *args):
+        return self.loop.run_until_complete(self.__aexit__(*args))
+
+    async def __aenter__(self):
+        self.write_cache_items_fut = self.loop.create_task(self.write_cache_items())
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
         self.session.close()
+        self.write_cache_items_fut.cancel()
+        try:
+            await self.write_cache_items_fut
+        except asyncio.CancelledError:
+            pass
 
     async def get_pano_ll(self, point, radius=15):
         key = 'll{:=+3.8f}{:=+3.8f}-{}'.format(point.lat, point.lng, radius)
         key_b = key.encode('ascii')
         with self.lmdb_env.begin() as tx:
-            id_b = tx.get(key_b, db=self.lmdb_db)
+            id_b = self.unwriten_cache_items.get(key_b) or tx.get(key_b, db=self.lmdb_db)
         if id_b:
             return (await self.get_pano_id(id_b.decode()))
         else:
@@ -619,16 +634,15 @@ class GoogleApi(object):
                 raise
             if data:
                 id_b = data['Location']['panoId'].encode('ascii')
-                with self.lmdb_env.begin(write=True) as tx:
-                    tx.put(key_b, id_b, db=self.lmdb_db)
-                    if tx.get(id_b, db=self.lmdb_db) is None:
-                        tx.put(id_b, msgpack.dumps(data, encoding='utf-8'), db=self.lmdb_db)
+                self.unwriten_cache_items[key_b] = id_b
+                self.unwriten_cache_items[id_b] = msgpack.dumps(data, encoding='utf-8')
+                self.has_unwriten_cache_items.set()
             return data
 
     async def get_pano_id(self, id):
         id_b = id.encode('ascii')
         with self.lmdb_env.begin() as tx:
-            text_b = tx.get(id_b, db=self.lmdb_db)
+            text_b = self.unwriten_cache_items.get(id_b) or tx.get(id_b, db=self.lmdb_db)
         # If the whole route is cached, we may end up blocking for a long time. quick sleep so we don't
         if text_b:
             return msgpack.loads(text_b, encoding='utf-8')
@@ -649,6 +663,23 @@ class GoogleApi(object):
                 logging.error('Bad JSON from api: {}\n {}'.format(e, text))
                 raise
 
-            with self.lmdb_env.begin(write=True) as tx:
-                tx.put(id_b, msgpack.dumps(data, encoding='utf-8'), db=self.lmdb_db)
+            self.unwriten_cache_items[id_b] = msgpack.dumps(data, encoding='utf-8')
+            self.has_unwriten_cache_items.set()
             return data
+
+    async def write_cache_items(self):
+        while True:
+            await self.has_unwriten_cache_items.wait()
+            try:
+                await asyncio.sleep(10)
+            finally:
+                too_write = list(self.unwriten_cache_items.items())
+                self.has_unwriten_cache_items.clear()
+                await self.loop.run_in_executor(None, self._write_cache_items, too_write)
+                for key, value in too_write:
+                    del self.unwriten_cache_items[key]
+
+    def _write_cache_items(self, too_write):
+        with self.lmdb_env.begin(write=True) as tx:
+            for key, value in too_write:
+                tx.put(key, value, db=self.lmdb_db)
