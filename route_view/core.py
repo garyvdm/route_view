@@ -331,7 +331,6 @@ class Route(object):
                                 last_pano_data = None
                                 last_point = no_image_point[0]
                                 last_at_distance = no_image_point[2] + no_image_start_distance
-
                         if pano_data and pano_data['Location']['panoId'] not in panos_ids:
                             no_pano_link = False
                             break
@@ -600,7 +599,9 @@ class GoogleApi(object):
         key_b = key.encode('ascii')
         with self.lmdb_env.begin() as tx:
             id_b = tx.get(key_b, db=self.lmdb_db)
-        if id_b is None:
+        if id_b:
+            return (await self.get_pano_id(id_b.decode()))
+        else:
             async with self.session.get(
                     'http://cbks0.googleapis.com/cbk',
                     params={
@@ -621,10 +622,8 @@ class GoogleApi(object):
                 with self.lmdb_env.begin(write=True) as tx:
                     tx.put(key_b, id_b, db=self.lmdb_db)
                     if tx.get(id_b, db=self.lmdb_db) is None:
-                        tx.put(id_b, text.encode('utf8'), db=self.lmdb_db)
+                        tx.put(id_b, msgpack.dumps(data, encoding='utf-8'), db=self.lmdb_db)
             return data
-        else:
-            return (await self.get_pano_id(id_b.decode()))
 
     async def get_pano_id(self, id):
         id_b = id.encode('ascii')
@@ -632,8 +631,7 @@ class GoogleApi(object):
             text_b = tx.get(id_b, db=self.lmdb_db)
         # If the whole route is cached, we may end up blocking for a long time. quick sleep so we don't
         if text_b:
-            text = text_b.decode('utf-8')
-            from_cache = True
+            return msgpack.loads(text_b, encoding='utf-8')
         else:
             await asyncio.sleep(0)
             async with self.session.get(
@@ -645,13 +643,12 @@ class GoogleApi(object):
                     }) as r:
                 r.raise_for_status()
                 text = await r.text()
-            from_cache = False
-        try:
-            data = json.loads(text)
-        except Exception as e:
-            logging.error('Bad JSON from api: {}\n {}'.format(e, text))
-            raise
-        if not from_cache:
+            try:
+                data = json.loads(text)
+            except Exception as e:
+                logging.error('Bad JSON from api: {}\n {}'.format(e, text))
+                raise
+
             with self.lmdb_env.begin(write=True) as tx:
-                tx.put(id_b, text.encode('utf8'), db=self.lmdb_db)
-        return data
+                tx.put(id_b, msgpack.dumps(data, encoding='utf-8'), db=self.lmdb_db)
+            return data
