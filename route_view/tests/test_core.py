@@ -6,6 +6,8 @@ import os
 import asyncio
 import pprint
 
+import lmdb
+
 from route_view.tests import unittest_run_loop
 from route_view.core import (
     Point,
@@ -58,7 +60,11 @@ class TestPointProcess(unittest.TestCase):
                 api_key = os.environ['PATHVIEW_TEST_APIKEY']
             except KeyError:
                 raise unittest.SkipTest('PATHVIEW_TEST_APIKEY env key not set.')
-            api = stack.enter_context(GoogleApi(api_key, ':mem:', asyncio.get_event_loop()))
+
+            lmdbtempdir = stack.enter_context(tempfile.TemporaryDirectory())
+            lmdb_env = stack.enter_context(lmdb.open(lmdbtempdir, max_dbs=10))
+
+            api = stack.enter_context(GoogleApi(api_key, lmdb_env, asyncio.get_event_loop()))
             tempdir = stack.enter_context(tempfile.TemporaryDirectory())
 
             def change_callback(change):

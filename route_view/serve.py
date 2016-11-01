@@ -8,6 +8,7 @@ import os
 
 import uvloop
 import yaml
+import lmdb
 
 import route_view.web_app
 import route_view.core
@@ -19,7 +20,7 @@ defaults_yaml = """
     debugtoolbar: False
     aioserver_debug: False
     data_path: data
-    api_cache_db: data/api_cache
+    lmdb_path: data/lmdb
 
 
     logging:
@@ -103,7 +104,8 @@ def main():
         os.mkdir(os.path.join(settings['data_path'], 'routes'))
 
     with contextlib.ExitStack() as stack:
-        google_api = stack.enter_context(route_view.core.GoogleApi(settings['api_key'], settings['api_cache_db'], asyncio.get_event_loop()))
+        lmdb_env = stack.enter_context(lmdb.open(settings['lmdb_path'], max_dbs=10))
+        google_api = stack.enter_context(route_view.core.GoogleApi(settings['api_key'], lmdb_env, asyncio.get_event_loop()))
 
         stack.enter_context(web_serve_cm(loop, settings, google_api))
         try:

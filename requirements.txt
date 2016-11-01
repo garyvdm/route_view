@@ -9,4 +9,4 @@ nvector
 pyyaml
 python-slugify
 uvloop
-unqlite
+lmdb

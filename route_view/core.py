@@ -10,7 +10,6 @@ import xml.etree.ElementTree as xml
 
 import aiohttp
 import attr
-import unqlite
 import geographiclib.geodesic
 import msgpack
 from more_itertools import (
@@ -583,10 +582,11 @@ def deg_wrap_to_closest(deg, to_deg):
 
 class GoogleApi(object):
 
-    def __init__(self, api_key, cache_db, loop):
+    def __init__(self, api_key, lmdb_env, loop):
         self.session = aiohttp.ClientSession()
         self.api_key = api_key
-        self.cache_db = unqlite.UnQLite(cache_db)
+        self.lmdb_env = lmdb_env
+        self.lmdb_db = lmdb_env.open_db(b'api_cache')
         self.loop = loop
 
     def __enter__(self):
@@ -594,13 +594,13 @@ class GoogleApi(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.session.close()
-        self.cache_db.close()
 
     async def get_pano_ll(self, point, radius=15):
         key = 'll{:=+3.8f}{:=+3.8f}-{}'.format(point.lat, point.lng, radius)
-        try:
-            id = self.cache_db[key]
-        except KeyError:
+        key_b = key.encode('ascii')
+        with self.lmdb_env.begin() as tx:
+            id_b = tx.get(key_b, db=self.lmdb_db)
+        if id_b is None:
             async with self.session.get(
                     'http://cbks0.googleapis.com/cbk',
                     params={
@@ -617,21 +617,25 @@ class GoogleApi(object):
                 logging.error('Bad JSON from api: {}\n {}'.format(e, text))
                 raise
             if data:
-                id = data['Location']['panoId']
-                self.cache_db[key] = id
-                if id not in self.cache_db:
-                    self.cache_db[id] = text
+                id_b = data['Location']['panoId'].encode('ascii')
+                with self.lmdb_env.begin(write=True) as tx:
+                    tx.put(key_b, id_b, db=self.lmdb_db)
+                    if tx.get(id_b, db=self.lmdb_db) is None:
+                        tx.put(id_b, text.encode('utf8'), db=self.lmdb_db)
             return data
         else:
-            return (await self.get_pano_id(id))
+            return (await self.get_pano_id(id_b.decode()))
 
     async def get_pano_id(self, id):
-        try:
-            text = self.cache_db[id]
-            # If the whole route is cached, we may end up blocking for a long time. quick sleep so we don't
-            await asyncio.sleep(0)
+        id_b = id.encode('ascii')
+        with self.lmdb_env.begin() as tx:
+            text_b = tx.get(id_b, db=self.lmdb_db)
+        # If the whole route is cached, we may end up blocking for a long time. quick sleep so we don't
+        if text_b:
+            text = text_b.decode('utf-8')
             from_cache = True
-        except KeyError:
+        else:
+            await asyncio.sleep(0)
             async with self.session.get(
                     'http://cbks0.googleapis.com/cbk',
                     params={
@@ -646,9 +650,8 @@ class GoogleApi(object):
             data = json.loads(text)
         except Exception as e:
             logging.error('Bad JSON from api: {}\n {}'.format(e, text))
-            if from_cache:
-                del self.cache_db[id]
             raise
         if not from_cache:
-            self.cache_db[id] = text
+            with self.lmdb_env.begin(write=True) as tx:
+                tx.put(id_b, text.encode('utf8'), db=self.lmdb_db)
         return data
