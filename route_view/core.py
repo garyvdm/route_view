@@ -590,6 +590,7 @@ class GoogleApi(object):
         self.loop = loop
         self.unwriten_cache_items = {}
         self.has_unwriten_cache_items = asyncio.Event(loop=loop)
+        self.get_pano_id_locks = {}
 
     def __enter__(self):
         return self.loop.run_until_complete(self.__aenter__())
@@ -646,6 +647,10 @@ class GoogleApi(object):
     async def get_pano_id(self, id):
         id_b = id.encode('ascii')
 
+        id_lock = self.get_pano_id_locks.get(id)
+        if id_lock:
+            await id_lock.wait()
+
         text_b = self.unwriten_cache_items.get(id_b)
         if text_b is None:
             with self.lmdb_env.begin() as tx:
@@ -656,24 +661,30 @@ class GoogleApi(object):
             await asyncio.sleep(0)
             return msgpack.loads(text_b, encoding='utf-8')
         else:
-            async with self.session.get(
-                    'http://cbks0.googleapis.com/cbk',
-                    params={
-                        'output': 'json',
-                        'panoid': id,
-                        'key': self.api_key,
-                    }) as r:
-                r.raise_for_status()
-                text = await r.text()
+            id_lock = asyncio.Event(loop=self.loop)
+            self.get_pano_id_locks[id] = id_lock
             try:
-                data = json.loads(text)
-            except Exception as e:
-                logging.error('Bad JSON from api: {}\n {}'.format(e, text))
-                raise
+                async with self.session.get(
+                        'http://cbks0.googleapis.com/cbk',
+                        params={
+                            'output': 'json',
+                            'panoid': id,
+                            'key': self.api_key,
+                        }) as r:
+                    r.raise_for_status()
+                    text = await r.text()
+                try:
+                    data = json.loads(text)
+                except Exception as e:
+                    logging.error('Bad JSON from api: {}\n {}'.format(e, text))
+                    raise
 
-            self.unwriten_cache_items[id_b] = msgpack.dumps(data, encoding='utf-8')
-            self.has_unwriten_cache_items.set()
-            return data
+                self.unwriten_cache_items[id_b] = msgpack.dumps(data, encoding='utf-8')
+                self.has_unwriten_cache_items.set()
+                return data
+            finally:
+                id_lock.set()
+                del self.get_pano_id_locks[id]
 
     async def write_cache_items(self):
         while True:

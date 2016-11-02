@@ -16,6 +16,5 @@
 * Show image meta data (location and date.)
 * Removing pano chain items.
 * Option to show bad yaw panos and visited non route panos
-* Use lock when downloading api data so that when 2 people processing the same route, the points only get downloaded once.
 * Restarting server causes route processing to stop, and is not restartable.
 * Send panos to client on highwater, rather than just time.
