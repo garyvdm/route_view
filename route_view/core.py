@@ -73,7 +73,7 @@ class Route(object):
     process_task = attr.ib(default=None, init=False)
     data_loaded = attr.ib(default=False, init=False)
     processing_complete = attr.ib(default=False)
-    processing_status = attr.ib(default='')
+    processing_status = attr.ib(default=attr.Factory(dict))
     route_points = attr.ib(default=None, init=False)
     route_bounds = attr.ib(default=None, init=False)
     panos = attr.ib(default=attr.Factory(list), init=False)
@@ -122,6 +122,10 @@ class Route(object):
 
             self.data_loaded = True
 
+            if self.processing_status.get('processing', True) and self.process_task is None:
+                self.set_status({'text': 'Processing unexpectedly cancelled.', 'cancelable': False, 'resumable': True, 'processing': False})
+                self.save_processing.__wrapped__(self)
+
     @runs_in_executor
     def save_metadata(self):
         meta = attr.asdict(self, filter=lambda a, v: a.name in route_meta_attrs)
@@ -163,10 +167,12 @@ class Route(object):
             with open(os.path.join(self.dir_route, 'status.json'), 'w') as f:
                 json.dump(self, f, default=state_json_encode)
 
-            with open(os.path.join(self.dir_route, 'panos.pack'), 'ab') as f:
-                for pano in self.panos[self.panos_len_at_last_save:]:
-                    msgpack.pack(pano, f, default=panos_json_encode)
-            self.panos_len_at_last_save = len(self.panos)
+            panos_to_append = self.panos[self.panos_len_at_last_save:]
+            if panos_to_append:
+                with open(os.path.join(self.dir_route, 'panos.pack'), 'ab') as f:
+                    for pano in self.panos[self.panos_len_at_last_save:]:
+                        msgpack.pack(pano, f, default=panos_json_encode)
+                self.panos_len_at_last_save = len(self.panos)
 
     async def load_route_from_gpx(self, gpx):
         os.mkdir(self.dir_route)
@@ -251,7 +257,7 @@ class Route(object):
 
     async def process(self):
         google_api = self.google_api
-        self.set_status({'text': 'Downloading street view image metadata.', 'cancelable': True, 'resumable': False})
+        self.set_status({'text': 'Downloading street view image metadata.', 'cancelable': True, 'resumable': False, 'processing': True})
         try:
 
             if not self.panos:
@@ -419,7 +425,7 @@ class Route(object):
 
             self.processing_complete = True
             await send_changes_task
-            self.set_status({'text': 'Complete', 'cancelable': False, 'resumable': False})
+            self.set_status({'text': 'Complete', 'cancelable': False, 'resumable': False, 'processing': False})
         except asyncio.CancelledError:
             send_changes_task.cancel()
             try:
@@ -427,10 +433,10 @@ class Route(object):
             except asyncio.CancelledError:
                 pass
             logging.info('Processing cancelled.')
-            self.set_status({'text': 'Processing cancelled.', 'cancelable': False, 'resumable': True})
+            self.set_status({'text': 'Processing cancelled.', 'cancelable': False, 'resumable': True, 'processing': False})
         except Exception as e:
             logging.exception('Processing error: ')
-            self.set_status({'text': 'Processing error: {}'.format(e), 'cancelable': False, 'resumable': True})
+            self.set_status({'text': 'Processing error: {}'.format(e), 'cancelable': False, 'resumable': True, 'processing': False})
         finally:
             if last_save_task:
                 await asyncio.shield(last_save_task)
