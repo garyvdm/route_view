@@ -612,8 +612,12 @@ class GoogleApi(object):
     async def get_pano_ll(self, point, radius=15):
         key = 'll{:=+3.8f}{:=+3.8f}-{}'.format(point.lat, point.lng, radius)
         key_b = key.encode('ascii')
-        with self.lmdb_env.begin() as tx:
-            id_b = self.unwriten_cache_items.get(key_b) or tx.get(key_b, db=self.lmdb_db)
+
+        id_b = self.unwriten_cache_items.get(key_b)
+        if id_b is None:
+            with self.lmdb_env.begin() as tx:
+                id_b = tx.get(key_b, db=self.lmdb_db)
+
         if id_b:
             return (await self.get_pano_id(id_b.decode()))
         else:
@@ -641,13 +645,17 @@ class GoogleApi(object):
 
     async def get_pano_id(self, id):
         id_b = id.encode('ascii')
-        with self.lmdb_env.begin() as tx:
-            text_b = self.unwriten_cache_items.get(id_b) or tx.get(id_b, db=self.lmdb_db)
-        # If the whole route is cached, we may end up blocking for a long time. quick sleep so we don't
+
+        text_b = self.unwriten_cache_items.get(id_b)
+        if text_b is None:
+            with self.lmdb_env.begin() as tx:
+                text_b = tx.get(id_b, db=self.lmdb_db)
+
         if text_b:
+            # If the whole route is cached, we may end up blocking for a long time. quick sleep so we don't
+            await asyncio.sleep(0)
             return msgpack.loads(text_b, encoding='utf-8')
         else:
-            await asyncio.sleep(0)
             async with self.session.get(
                     'http://cbks0.googleapis.com/cbk',
                     params={
