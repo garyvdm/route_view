@@ -3,8 +3,6 @@
 * Show waypoints from file.
 * If rotatable panoramic is moved to point on route, change play positon to that point.
 * Proxy & cache images.
-* Authentication.
-* List of routes.
 * Route sharing.
 * Show elevation graph.
 * Speed selection.
@@ -18,6 +16,6 @@
 * Show image meta data (location and date.)
 * Removing pano chain items.
 * Option to show bad yaw panos and visited non route panos
-* Move cache save out of the critical chain.
 * Use lock when downloading api data so that when 2 people processing the same route, the points only get downloaded once.
-
+* Restarting server causes route processing to stop, and is not restartable.
+* Send panos to client on highwater, rather than just time.
