@@ -421,6 +421,11 @@ class Route(object):
             await send_changes_task
             self.set_status({'text': 'Complete', 'cancelable': False, 'resumable': False})
         except asyncio.CancelledError:
+            send_changes_task.cancel()
+            try:
+                await send_changes_task
+            except asyncio.CancelledError:
+                pass
             logging.info('Processing cancelled.')
             self.set_status({'text': 'Processing cancelled.', 'cancelable': False, 'resumable': True})
         except Exception as e:
