@@ -381,7 +381,7 @@ class Route(object):
                 if pano_data:
                     location = pano_data['Location']
                     pano_point = Point(lat=float(location['lat']), lng=float(location['lng']))
-                    point_pair, c_point, dist = find_closest_point_pair(self.route_points[last_point_index:], pano_point)
+                    point_pair, c_point, dist = find_closest_point_pair([last_point] + self.route_points[last_point_index + 1:], pano_point)
 
                     if dist > 25:
                         logging.debug("Distance {} to nearest point too great for pano: {}"
@@ -390,12 +390,12 @@ class Route(object):
                         no_pano_link = True
                     else:
                         heading = get_azimuth_to_distance_on_route(inverse_line_cached, c_point, self.route_points[point_pair[1].index:], 50)
-                        c_point_dist = point_pair[0].distance + distance(point_pair[0], c_point)
+                        c_point_dist = point_pair[1].distance - distance(point_pair[1], c_point)
                         distance_from_last = c_point_dist - last_at_distance
 
                         pano = dict(
                             type='pano', id=location['panoId'], point=pano_point, original_point=pano_point,
-                            description=location['description'], prev_route_index=point_pair[0].index, heading=heading,
+                            description=location['description'], prev_route_index=point_pair[1].index - 1, heading=heading,
                             at_dist=c_point_dist, dist_from_last=distance_from_last)
                         new_panos.append(pano)
                         panos_ids.append(pano['id'])
@@ -403,7 +403,7 @@ class Route(object):
                         # logging.debug("Got pano {} {}".format(pano_point, location['description']))
                         last_pano = pano
                         last_pano_data = pano_data
-                        last_point_index = point_pair[0].index
+                        last_point_index = point_pair[1].index - 1
                         last_point = c_point
                         last_at_distance = c_point_dist
 
@@ -670,7 +670,9 @@ class GoogleApi(object):
         if text_b:
             # If the whole route is cached, we may end up blocking for a long time. quick sleep so we don't
             await asyncio.sleep(0)
-            return msgpack.loads(text_b, encoding='utf-8')
+            data = msgpack.loads(text_b, encoding='utf-8')
+            assert data['Location']['panoId'] == id
+            return data
         else:
             id_lock = asyncio.Event(loop=self.loop)
             self.get_pano_id_locks[id] = id_lock
