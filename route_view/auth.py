@@ -48,10 +48,10 @@ class StravaClient(OAuth2Client):
 @attr.s
 class StorageType(object):
     app = attr.ib()
-    route = attr.ib()
+    path = attr.ib()
     id = attr.ib()
 
-    no_save_attrs = {'app', 'route'}
+    no_save_attrs = {'app', 'path'}
 
     @classmethod
     async def load(cls, app, id):
@@ -66,19 +66,19 @@ class StorageType(object):
     @classmethod
     @runs_in_executor
     def _load(cls, app, id):
-        route = os.path.join(app['route_view.{}_route'.format(cls.type_name)], id)
+        path = os.path.join(app['route_view.{}_route'.format(cls.type_name)], id)
         try:
-            with open(route, 'r') as f:
+            with open(path, 'r') as f:
                 data = yaml.load(f)
-            return cls(app, route, **data)
+            return cls(app, path, **data)
         except FileNotFoundError:
-            login = cls(app, route, id)
+            login = cls(app, path, id)
             return login
 
     @runs_in_executor
     def save(self):
         data = attr.asdict(self, filter=lambda a, v: a.name not in self.no_save_attrs)
-        with open(self.route, 'w') as f:
+        with open(self.path, 'w') as f:
             yaml.dump(data, f)
 
 
@@ -96,6 +96,14 @@ class Login(StorageType):
         if now - self.access_timestamp - self.access_timestamp_change_delta:
             self.access_timestamp = now
             await self.save()
+
+    @runs_in_executor
+    def save(self):
+        if not self.routes and not self.user_id:
+            with contextlib.suppress(FileNotFoundError):
+                os.remove(self.path)
+        else:
+            super().save.__wrapped__(self)
 
 
 @attr.s
