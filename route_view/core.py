@@ -325,26 +325,28 @@ class Route(object):
                         pano_data = await google_api.get_pano_ll(point, radius=radius)
 
                         if dist_from_last > 80:
-                            while points_with_set_spacing_for_no_images.peek()[2] <= dist_from_last:
-                                no_image_point = next(points_with_set_spacing_for_no_images)
-                                last_point_index = (no_image_point[1].index if isinstance(no_image_point[1], IndexedPoint) else last_point_index)
-                                no_images_item = dict(
-                                    type='no_images', point=no_image_point[0],
-                                    prev_route_index=last_point_index + 1,
-                                    at_dist=no_image_point[2] + no_image_start_distance, dist_from_last=no_image_point[3],
-                                    start_point=no_image_start_point, start_route_index=no_image_start_index,
-                                    start_dist_from=no_image_point[2],
-                                )
-                                new_panos.append(no_images_item)
-                                has_new_panos.set()
-                                last_pano = no_images_item
-                                last_pano_data = None
-                                last_point = no_image_point[0]
-                                last_at_distance = no_image_point[2] + no_image_start_distance
+                            try:
+                                while points_with_set_spacing_for_no_images.peek()[2] <= dist_from_last:
+                                    no_image_point = next(points_with_set_spacing_for_no_images)
+                                    last_point_index = (no_image_point[1].index if isinstance(no_image_point[1], IndexedPoint) else last_point_index)
+                                    no_images_item = dict(
+                                        type='no_images', point=no_image_point[0],
+                                        prev_route_index=last_point_index + 1,
+                                        at_dist=no_image_point[2] + no_image_start_distance, dist_from_last=no_image_point[3],
+                                        start_point=no_image_start_point, start_route_index=no_image_start_index,
+                                        start_dist_from=no_image_point[2],
+                                    )
+                                    new_panos.append(no_images_item)
+                                    has_new_panos.set()
+                                    last_pano = no_images_item
+                                    last_pano_data = None
+                                    last_point = no_image_point[0]
+                                    last_at_distance = no_image_point[2] + no_image_start_distance
+                            except StopIteration:
+                                pass
                         if pano_data and pano_data['Location']['panoId'] not in panos_ids:
                             no_pano_link = False
                             break
-
                     else:
                         break
                     del points_with_set_spacing
