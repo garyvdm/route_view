@@ -428,6 +428,7 @@ class Route(object):
                 ))
                 has_new_panos.set()
 
+            new_panos[-1]['last'] = True
             self.processing_complete = True
             await send_changes_task
             self.set_status({'text': 'Complete', 'cancelable': False, 'resumable': False, 'processing': False})

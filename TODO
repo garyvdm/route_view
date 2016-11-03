@@ -6,7 +6,6 @@
 * Route sharing.
 * Show elevation graph.
 * Speed selection.
-* Limit speed if processing/image downloading is too slow, so that playback is still smooth.
 * Quota use tracking.
 * Deleting of routes
 * Full screen for non rotatable and rotatable panos.

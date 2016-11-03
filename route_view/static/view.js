@@ -1,5 +1,7 @@
 document.addEventListener('DOMContentLoaded', function() {
 
+    var desired_speed = 300 / 3.6;
+
     var pano_rotate = new google.maps.StreetViewPanorama(document.getElementById('pano_rotate'),{
         imageDateControl: true,
         visible: false
@@ -176,9 +178,32 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function continue_play() {
-        var pano_index = current_pano_index + 1
-        if (playing && !show_next_pano_timeout && !show_delayed && pano_index < panos.length ) {
-            show_next_pano_timeout = setTimeout(show_pano, 100, pano_index);
+        if (playing) {
+            var pano_index = current_pano_index + 1
+            var pano = panos[pano_index];
+
+            // Work out the amount of time that we have images buffered for.
+            var buffer_i = pano_index;
+            var buffer_t = 0;
+            while (buffer_t < 9){
+                var b_pano = panos[buffer_i];
+                if ((b_pano.type == 'pano' && b_pano.hasOwnProperty('img_src')) || b_pano.type != 'pano' ){
+                    buffer_t += b_pano.dist_from_last / desired_speed;
+                    if (b_pano.hasOwnProperty('last')) {
+                        buffer_t = 9;
+                        break;
+                    }
+                } else {
+                    break;
+                }
+                buffer_i ++;
+                if (buffer_i >= panos.length) break;
+            }
+            var speed = desired_speed * Math.log10(Math.min(buffer_t, 8) + 2);
+            var frame_time = pano.dist_from_last / speed * 1000;
+            if (!show_next_pano_timeout && !show_delayed && pano_index < panos.length ) {
+                show_next_pano_timeout = setTimeout(show_pano, frame_time, pano_index);
+            }
         }
     }
 
@@ -448,3 +473,5 @@ if (!Array.prototype.findIndex) {
         return -1;
     };
 }
+
+
