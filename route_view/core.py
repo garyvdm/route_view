@@ -33,7 +33,6 @@ from route_view.util import (
     runs_in_executor,
 )
 
-
 @attr.s(slots=True)
 class Point(object):
     lat = attr.ib()
@@ -603,6 +602,7 @@ class GoogleApi(object):
         self.unwriten_cache_items = {}
         self.has_unwriten_cache_items = asyncio.Event(loop=loop)
         self.get_pano_id_locks = {}
+        self.reader_tx = self.lmdb_env.begin()
 
     def __enter__(self):
         return self.loop.run_until_complete(self.__aenter__())
@@ -628,8 +628,7 @@ class GoogleApi(object):
 
         id_b = self.unwriten_cache_items.get(key_b)
         if id_b is None:
-            with self.lmdb_env.begin() as tx:
-                id_b = tx.get(key_b, db=self.lmdb_db)
+            id_b = self.reader_tx.get(key_b, db=self.lmdb_db)
 
         if id_b:
             return (await self.get_pano_id(id_b.decode()))
@@ -665,8 +664,7 @@ class GoogleApi(object):
 
         text_b = self.unwriten_cache_items.get(id_b)
         if text_b is None:
-            with self.lmdb_env.begin() as tx:
-                text_b = tx.get(id_b, db=self.lmdb_db)
+            text_b = self.reader_tx.get(id_b, db=self.lmdb_db)
 
         if text_b:
             # If the whole route is cached, we may end up blocking for a long time. quick sleep so we don't
@@ -716,6 +714,8 @@ class GoogleApi(object):
                     await self.loop.run_in_executor(None, self._write_cache_items, too_write)
                     for key, value in too_write:
                         del self.unwriten_cache_items[key]
+                    self.reader_tx.abort()
+                    self.reader_tx = self.lmdb_env.begin()
                 except Exception:
                     logging.exception('Error writeing cache items:')
 
