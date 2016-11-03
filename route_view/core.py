@@ -205,7 +205,7 @@ class Route(object):
             yield {'route_bounds': self.route_bounds}
             yield {'route_points': self.route_points, 'route_distance': self.route_points[-1].distance}
         if self.panos:
-            for chunk in chunked(self.panos, 100):
+            for chunk in chunked(self.panos, 500):
                 yield {'panos': chunk}
 
     async def start_processing(self):
