@@ -672,33 +672,37 @@ class GoogleApi(object):
             # If the whole route is cached, we may end up blocking for a long time. quick sleep so we don't
             await asyncio.sleep(0)
             data = msgpack.loads(text_b, encoding='utf-8')
-            assert data['Location']['panoId'] == id
-            return data
-        else:
-            id_lock = asyncio.Event(loop=self.loop)
-            self.get_pano_id_locks[id] = id_lock
             try:
-                async with self.session.get(
-                        'http://cbks0.googleapis.com/cbk',
-                        params={
-                            'output': 'json',
-                            'panoid': id,
-                            'key': self.api_key,
-                        }) as r:
-                    r.raise_for_status()
-                    text = await r.text()
-                try:
-                    data = json.loads(text)
-                except Exception as e:
-                    logging.error('Bad JSON from api: {}\n {}'.format(e, text))
-                    raise
-
-                self.unwriten_cache_items[id_b] = msgpack.dumps(data, encoding='utf-8')
-                self.has_unwriten_cache_items.set()
+                assert data['Location']['panoId'] == id
+            except Exception:
+                logging.exception("Error with cached data:")
+            else:
                 return data
-            finally:
-                id_lock.set()
-                del self.get_pano_id_locks[id]
+
+        id_lock = asyncio.Event(loop=self.loop)
+        self.get_pano_id_locks[id] = id_lock
+        try:
+            async with self.session.get(
+                    'http://cbks0.googleapis.com/cbk',
+                    params={
+                        'output': 'json',
+                        'panoid': id,
+                        'key': self.api_key,
+                    }) as r:
+                r.raise_for_status()
+                text = await r.text()
+            try:
+                data = json.loads(text)
+            except Exception as e:
+                logging.error('Bad JSON from api: {}\n {}'.format(e, text))
+                raise
+
+            self.unwriten_cache_items[id_b] = msgpack.dumps(data, encoding='utf-8')
+            self.has_unwriten_cache_items.set()
+            return data
+        finally:
+            id_lock.set()
+            del self.get_pano_id_locks[id]
 
     async def write_cache_items(self):
         while True:
