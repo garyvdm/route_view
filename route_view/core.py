@@ -6,7 +6,6 @@ import asyncio
 import itertools
 import threading
 import collections
-import copy
 import xml.etree.ElementTree as xml
 
 import aiohttp
@@ -15,6 +14,7 @@ import geographiclib.geodesic
 import msgpack
 from more_itertools import (
     peekable,
+    chunked,
 )
 from nvector import (
     unit,
@@ -206,7 +206,8 @@ class Route(object):
             yield {'route_bounds': self.route_bounds}
             yield {'route_points': self.route_points, 'route_distance': self.route_points[-1].distance}
         if self.panos:
-            yield {'panos': self.panos}
+            for chunk in chunked(self.panos, 100):
+                yield {'panos': chunk}
 
     async def start_processing(self):
         self.process_task = asyncio.ensure_future(self.process())

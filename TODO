@@ -17,5 +17,4 @@
 * Removing pano chain items.
 * Option to show bad yaw panos and visited non route panos
 * Send panos to client on highwater, rather than just time.
-* Long routes take a long time to load on client if route is processed.
 * Don't save login if no routes and no user.
