@@ -6,6 +6,7 @@ import socket
 import contextlib
 import os
 import signal
+import sys
 
 import uvloop
 import yaml
@@ -82,44 +83,48 @@ def main():
 
     logging.config.dictConfig(settings['logging'])
 
-    if args.inet:
-        host, _, port_str = args.inet.split(':')
-        port = int(port_str)
-        settings['server_type'] = 'inet'
-        settings['inet_host'] = host
-        settings['inet_port'] = port
-    if args.unix:
-        settings['server_type'] = 'unix'
-        settings['unix_route'] = args.unix
-    if args.dev:
-        settings['debugtoolbar'] = True
-        settings['aioserver_debug'] = True
-    if args.api_key:
-        settings['api_key'] = args.api_key
-
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-    loop = asyncio.get_event_loop()
-
-    with contextlib.suppress(FileExistsError):
-        os.mkdir(settings['data_path'])
-    with contextlib.suppress(FileExistsError):
-        os.mkdir(os.path.join(settings['data_path'], 'routes'))
-
-    for signame in ('SIGINT', 'SIGTERM'):
-        loop.add_signal_handler(getattr(signal, signame), loop.stop)
-
     try:
-        with contextlib.ExitStack() as stack:
-            lmdb_env = stack.enter_context(lmdb.open(settings['lmdb_path'], max_dbs=10, map_size=settings['lmdb_map_size']))
-            google_api = stack.enter_context(route_view.core.GoogleApi(settings['api_key'], lmdb_env, asyncio.get_event_loop()))
-            stack.enter_context(web_serve_cm(loop, settings, google_api))
-            try:
-                loop.run_forever()
-            except KeyboardInterrupt:
-                pass
-    finally:
-        loop.close()
 
+        if args.inet:
+            host, _, port_str = args.inet.split(':')
+            port = int(port_str)
+            settings['server_type'] = 'inet'
+            settings['inet_host'] = host
+            settings['inet_port'] = port
+        if args.unix:
+            settings['server_type'] = 'unix'
+            settings['unix_route'] = args.unix
+        if args.dev:
+            settings['debugtoolbar'] = True
+            settings['aioserver_debug'] = True
+        if args.api_key:
+            settings['api_key'] = args.api_key
+
+        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+        loop = asyncio.get_event_loop()
+
+        with contextlib.suppress(FileExistsError):
+            os.mkdir(settings['data_path'])
+        with contextlib.suppress(FileExistsError):
+            os.mkdir(os.path.join(settings['data_path'], 'routes'))
+
+        for signame in ('SIGINT', 'SIGTERM'):
+            loop.add_signal_handler(getattr(signal, signame), loop.stop)
+
+        try:
+            with contextlib.ExitStack() as stack:
+                lmdb_env = stack.enter_context(lmdb.open(settings['lmdb_path'], max_dbs=10, map_size=settings['lmdb_map_size']))
+                google_api = stack.enter_context(route_view.core.GoogleApi(settings['api_key'], lmdb_env, asyncio.get_event_loop()))
+                stack.enter_context(web_serve_cm(loop, settings, google_api))
+                try:
+                    loop.run_forever()
+                except KeyboardInterrupt:
+                    pass
+        finally:
+            loop.close()
+    except Exception:
+        logging.exception('Unhandled exception:')
+        sys.exit(3)
 
 @contextlib.contextmanager
 def web_serve_cm(loop, settings, google_api):
