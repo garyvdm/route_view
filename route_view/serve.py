@@ -22,6 +22,7 @@ defaults_yaml = """
     aioserver_debug: False
     data_path: data
     lmdb_path: data/lmdb
+    lmdb_map_size: 1250000000   # 10 GB
 
 
     logging:
@@ -109,7 +110,7 @@ def main():
 
     try:
         with contextlib.ExitStack() as stack:
-            lmdb_env = stack.enter_context(lmdb.open(settings['lmdb_path'], max_dbs=10))
+            lmdb_env = stack.enter_context(lmdb.open(settings['lmdb_path'], max_dbs=10, map_size=settings['lmdb_map_size']))
             google_api = stack.enter_context(route_view.core.GoogleApi(settings['api_key'], lmdb_env, asyncio.get_event_loop()))
             stack.enter_context(web_serve_cm(loop, settings, google_api))
             try:
