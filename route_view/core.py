@@ -284,15 +284,17 @@ class Route(object):
             inverse_line_cached = functools.lru_cache(32)(geodesic.InverseLine)
 
             new_panos = []
+            has_new_panos = asyncio.Event()
 
             async def send_changes():
                 nonlocal new_panos
                 while True:
                     await asyncio.sleep(0.2)
-                    if new_panos:
-                        self.panos.extend(new_panos)
-                        self.change_callback({'panos': new_panos})
-                        new_panos = []
+                    await has_new_panos.wait()
+                    has_new_panos.clear()
+                    self.panos.extend(new_panos)
+                    self.change_callback({'panos': new_panos})
+                    new_panos = []
 
                     if self.processing_complete:
                         break
@@ -334,6 +336,7 @@ class Route(object):
                                     start_dist_from=no_image_point[2],
                                 )
                                 new_panos.append(no_images_item)
+                                has_new_panos.set()
                                 last_pano = no_images_item
                                 last_pano_data = None
                                 last_point = no_image_point[0]
@@ -398,6 +401,7 @@ class Route(object):
                             description=location['description'], prev_route_index=point_pair[1].index - 1, heading=heading,
                             at_dist=c_point_dist, dist_from_last=distance_from_last)
                         new_panos.append(pano)
+                        has_new_panos.set()
                         panos_ids.append(pano['id'])
 
                         # logging.debug("Got pano {} {}".format(pano_point, location['description']))
@@ -422,6 +426,7 @@ class Route(object):
                     end_point=self.route_points[-1].to_point(), end_index=len(self.route_points) - 2,
                     start_distance=last_pano['at_distance'] + 1, end_distance=self.route_points[-1].distance,
                 ))
+                has_new_panos.set()
 
             self.processing_complete = True
             await send_changes_task

@@ -16,4 +16,3 @@
 * Show image meta data (location and date.)
 * Removing pano chain items.
 * Option to show bad yaw panos and visited non route panos
-* Send panos to client on highwater, rather than just time.
