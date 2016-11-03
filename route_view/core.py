@@ -712,9 +712,12 @@ class GoogleApi(object):
             finally:
                 too_write = list(self.unwriten_cache_items.items())
                 self.has_unwriten_cache_items.clear()
-                await self.loop.run_in_executor(None, self._write_cache_items, too_write)
-                for key, value in too_write:
-                    del self.unwriten_cache_items[key]
+                try:
+                    await self.loop.run_in_executor(None, self._write_cache_items, too_write)
+                    for key, value in too_write:
+                        del self.unwriten_cache_items[key]
+                except Exception:
+                    logging.exception('Error writeing cache items:')
 
     def _write_cache_items(self, too_write):
         with self.lmdb_env.begin(write=True) as tx:
