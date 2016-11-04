@@ -33,6 +33,7 @@ from route_view.util import (
     runs_in_executor,
 )
 
+
 @attr.s(slots=True)
 class Point(object):
     lat = attr.ib()
@@ -62,6 +63,7 @@ route_meta_attrs = {'name'}
 route_route_attrs = {'route_points', 'route_bounds', 'pano_chain'}
 route_status_attrs = {'processing_complete', 'processing_status'}
 route_meta_and_status_attrs = route_meta_attrs | route_status_attrs
+
 
 @attr.s
 class Route(object):
@@ -185,7 +187,6 @@ class Route(object):
         trkpts = doc.findall('./gpx11:trk/gpx11:trkseg/gpx11:trkpt', gpx_ns)
         points = route_with_distance_and_index((float(trkpt.attrib['lat']), float(trkpt.attrib['lon'])) for trkpt in trkpts)
         await self.set_route_points(points)
-
 
     async def set_route_points(self, points):
         if self.process_task:

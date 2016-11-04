@@ -86,6 +86,7 @@ async def app_cancel_processing(app):
             except Exception:
                 pass
 
+
 def add_static_resource(app, resource_name, route, *args, **kwargs):
     body = pkg_resources.resource_string('route_view', resource_name)
     body_processor = kwargs.pop('body_processor', None)
@@ -116,9 +117,10 @@ async def upload_route(request):
     route_id = mk_id()
     route_dir_route = os.path.join(app['route_view.settings']['data_path'], 'routes', route_id)
     os.mkdir(route_dir_route)
-    route = Route(id=route_id, name=name, dir_route=route_dir_route,
-                change_callback=partial(change_callback, request.app['route_view.routes_sessions'][route_id]),
-                google_api=app['route_view.google_api'])
+    route = Route(
+        id=route_id, name=name, dir_route=route_dir_route,
+        change_callback=partial(change_callback, request.app['route_view.routes_sessions'][route_id]),
+        google_api=app['route_view.google_api'])
     app['route_view.routes'][route_id] = route
     await route.load_route_from_gpx(upload_file)
     await route.save_metadata()

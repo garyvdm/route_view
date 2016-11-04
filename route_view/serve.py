@@ -126,6 +126,7 @@ def main():
         logging.exception('Unhandled exception:')
         sys.exit(3)
 
+
 @contextlib.contextmanager
 def web_serve_cm(loop, settings, google_api):
     app = route_view.web_app.make_aio_app(loop, settings, google_api)
