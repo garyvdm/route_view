@@ -1,4 +1,6 @@
 * Other file input formats (GPX1.0, TCX, KML)
+* Route import from strava.
+* Route import from ridewithgps (no oauth mean this might not happend).
 * Show waypoints from file.
 * If rotatable panoramic is moved to point on route, change play positon to that point.
 * Proxy & cache images.
