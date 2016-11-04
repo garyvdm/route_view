@@ -115,11 +115,13 @@ async def upload_route(request):
     app = request.app
     route_id = mk_id()
     route_dir_route = os.path.join(app['route_view.settings']['data_path'], 'routes', route_id)
+    os.mkdir(route_dir_route)
     route = Route(id=route_id, name=name, dir_route=route_dir_route,
                 change_callback=partial(change_callback, request.app['route_view.routes_sessions'][route_id]),
                 google_api=app['route_view.google_api'])
     app['route_view.routes'][route_id] = route
     await route.load_route_from_gpx(upload_file)
+    await route.save_metadata()
     await route.start_processing()
     user = await route_view.auth.get_user_or_login(request)
     user.routes.append(route_id)

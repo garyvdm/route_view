@@ -61,7 +61,7 @@ class IndexedPoint(Point):
 route_meta_attrs = {'name'}
 route_route_attrs = {'route_points', 'route_bounds', 'pano_chain'}
 route_status_attrs = {'processing_complete', 'processing_status'}
-
+route_meta_and_status_attrs = route_meta_attrs | route_status_attrs
 
 @attr.s
 class Route(object):
@@ -174,11 +174,18 @@ class Route(object):
                 self.panos_len_at_last_save = len(self.panos)
 
     async def load_route_from_gpx(self, gpx):
-        os.mkdir(self.dir_route)
-        await self.save_metadata()
         with open(os.path.join(self.dir_route, 'upload.gpx'), 'wb') as f:
             f.write(gpx)
-        await self.set_route_points(gpx_get_points(gpx))
+
+        gpx_ns = {'gpx11': 'http://www.topografix.com/GPX/1/1', }
+        doc = xml.fromstring(gpx)
+        self.name = ', '.join((item.text for item in doc.findall('./gpx11:trk/gpx11:name', gpx_ns)))
+        await self.save_metadata()
+
+        trkpts = doc.findall('./gpx11:trk/gpx11:trkseg/gpx11:trkpt', gpx_ns)
+        points = route_with_distance_and_index((float(trkpt.attrib['lat']), float(trkpt.attrib['lon'])) for trkpt in trkpts)
+        await self.set_route_points(points)
+
 
     async def set_route_points(self, points):
         if self.process_task:
@@ -194,16 +201,13 @@ class Route(object):
         await self.reset_processed()
         self.data_loaded = True
         self.processing_complete = False
-        self.change_callback({'route_bounds': self.route_bounds})
-        self.change_callback({'route_points': self.route_points, 'route_distance': self.route_points[-1].distance})
+        self.change_callback({'route_bounds': self.route_bounds, 'route_points': self.route_points, 'route_distance': self.route_points[-1].distance})
         await self.save_route()
 
     def get_existing_changes(self):
+        yield attr.asdict(self, filter=lambda a, v: a.name in route_meta_and_status_attrs)
         if self.route_points:
-            yield {'status': self.processing_status}
-        if self.route_points:
-            yield {'route_bounds': self.route_bounds}
-            yield {'route_points': self.route_points, 'route_distance': self.route_points[-1].distance}
+            yield {'route_bounds': self.route_bounds, 'route_points': self.route_points, 'route_distance': self.route_points[-1].distance}
         if self.panos:
             for chunk in chunked(self.panos, 500):
                 yield {'panos': chunk}
@@ -240,7 +244,7 @@ class Route(object):
 
     def set_status(self, status):
         self.processing_status = status
-        self.change_callback({'status': status, })
+        self.change_callback(attr.asdict(self, filter=lambda a, v: a.name in route_status_attrs))
 
     def process_task_done_callback(self, fut):
         try:
@@ -449,18 +453,6 @@ class Route(object):
             if last_save_task:
                 await asyncio.shield(last_save_task)
             await asyncio.shield(self.save_processing())
-
-
-gpx_ns = {
-    'gpx11': 'http://www.topografix.com/GPX/1/1',
-}
-
-
-def gpx_get_points(gpx):
-    doc = xml.fromstring(gpx)
-    trkpts = doc.findall('./gpx11:trk/gpx11:trkseg/gpx11:trkpt', gpx_ns)
-    points = route_with_distance_and_index((float(trkpt.attrib['lat']), float(trkpt.attrib['lon'])) for trkpt in trkpts)
-    return points
 
 
 def route_with_distance_and_index(route):

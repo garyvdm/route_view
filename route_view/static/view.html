@@ -36,15 +36,18 @@
         <button id="play_pause" style="padding:0;">
           <img src="/static/pause.png" width="24" height="24" >
         </button>
+        <span id="name_display" style="font-weight: bold;"></span>
+        <br>
+        Processing status: <span id="processing_status"></span>
+        <button id="cancel" style="display: none;">Cancel</button>
+        <button id="resume" style="display: none;">Resume</button>
+        <br><br>
+
         <label><input type="checkbox" id="show_pano_markers">Show panoramic markers</label>
         <button id="add_chain_item" style="display: none;">Change next panoramic</button>
         <button id="add_chain_item_cancel" style="display: none;">Cancel</button>
         <button id="add_chain_item_set" style="display: none;">Set</button>
 
-        <br>
-        Processing status: <span id="processing_status"></span>
-        <button id="cancel" style="display: none;">Cancel</button>
-        <button id="resume" style="display: none;">Resume</button>
       </div>
     </div>
     <div id="map" style="height: 100%;"></div>

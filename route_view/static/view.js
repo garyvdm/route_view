@@ -115,10 +115,14 @@ document.addEventListener('DOMContentLoaded', function() {
     ws.onmessage = function(e) {
         var data = JSON.parse(e.data);
 //        console.log(data);
-        if (data.hasOwnProperty('status')) {
-            processing_status.textContent = data.status.text;
-            cancel.style.display = data.status.cancelable ? '' : 'none';
-            resume.style.display = data.status.resumable ? '' : 'none';
+        if (data.hasOwnProperty('name')) {
+            document.getElementById('name_display').textContent = data.name;
+            document.title = data.name;
+        }
+        if (data.hasOwnProperty('processing_status')) {
+            processing_status.textContent = data.processing_status.text;
+            cancel.style.display = data.processing_status.cancelable ? '' : 'none';
+            resume.style.display = data.processing_status.resumable ? '' : 'none';
         }
         if (data.hasOwnProperty('api_key')) {
             api_key = '&key=' + data.api_key;
