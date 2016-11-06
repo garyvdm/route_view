@@ -265,7 +265,8 @@ document.addEventListener('DOMContentLoaded', function() {
         var pano = panos[pano_index];
         if (pano.type == 'pano'){
             pano.image = new Image();
-            pano.image.src = '/img/' + pano.id + '/' + pano.heading
+            heading = Math.round(pano.heading * 10) / 10;
+            pano.image.src = '/img/' + pano.id + '~' + heading
             num_panos_loading++;
             pano.image.onload = function(){
                 num_panos_loading--;

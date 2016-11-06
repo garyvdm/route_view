@@ -15,4 +15,14 @@ def runs_in_executor(fn):
 
 
 def mk_id():
-    return base64.urlsafe_b64encode(uuid.uuid4().bytes).decode('ascii')[:22]
+    return id_encode(uuid.uuid4().bytes).decode('ascii')
+
+
+def id_encode(id):
+    return base64.urlsafe_b64encode(id)[:22]
+
+
+def id_decode(id):
+    if isinstance(id, str):
+        id = id.encode('ascii')
+    return base64.urlsafe_b64decode(id + b'==')

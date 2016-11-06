@@ -6,6 +6,7 @@ import asyncio
 import itertools
 import threading
 import collections
+import struct
 import xml.etree.ElementTree as xml
 
 import aiohttp
@@ -31,6 +32,7 @@ from numpy import (
 
 from route_view.util import (
     runs_in_executor,
+    id_decode,
 )
 
 
@@ -402,7 +404,7 @@ class Route(object):
                         no_pano_link = True
                     else:
                         heading = get_azimuth_to_distance_on_route(inverse_line_cached, c_point, self.route_points[point_pair[1].index:], 50)
-                        heading = round(heading, 1)
+                        heading = round(heading, 1) % 360
                         c_point_dist = point_pair[1].distance - distance(point_pair[1], c_point)
                         distance_from_last = c_point_dist - last_at_distance
 
@@ -633,42 +635,26 @@ class GoogleApi(object):
             pass
 
     async def get_pano_ll(self, point, radius=15):
-        key = 'll{:=+3.8f}{:=+3.8f}-{}'.format(point.lat, point.lng, radius)
-        key_b = key.encode('ascii')
-
-        id_b = self.get_pano_id_unwriten_cache.get(key_b)
-        if id_b is None:
-            id_b = self.reader_tx.get(key_b, db=self.get_pano_id_db)
-
-        if id_b:
-            return (await self.get_pano_id(id_b.decode()))
-        else:
-            async with self.session.get(
-                    'http://cbks0.googleapis.com/cbk',
-                    params={
-                        'output': 'json',
-                        'radius': round(radius),
-                        'll': latlng_urlstr(point),
-                        'key': self.api_key,
-                    }) as r:
-                r.raise_for_status()
-                text = await r.text()
-            try:
-                data = json.loads(text)
-            except Exception as e:
-                logging.error('Bad JSON from api: {}\n {}'.format(e, text))
-                raise
-            if data:
-                id_b = data['Location']['panoId'].encode('ascii')
-                self.get_pano_id_unwriten_cache[key_b] = id_b
-                self.get_pano_id_unwriten_cache[id_b] = msgpack.dumps(data, encoding='utf-8')
-                self.has_unwriten_cache_items.set()
-            return data
+        async with self.session.get(
+                'http://cbks0.googleapis.com/cbk',
+                params={
+                    'output': 'json',
+                    'radius': round(radius),
+                    'll': latlng_urlstr(point),
+                    'key': self.api_key,
+                }) as r:
+            r.raise_for_status()
+            text = await r.text()
+        try:
+            return json.loads(text)
+        except Exception as e:
+            logging.error('Bad JSON from api: {}\n {}'.format(e, text))
+            raise
 
     async def get_pano_id(self, id):
-        id_b = id.encode('ascii')
+        id_b = id_decode(id)
 
-        id_lock = self.get_pano_id_locks.get(id)
+        id_lock = self.get_pano_id_locks.get(id_b)
         if id_lock:
             await id_lock.wait()
 
@@ -688,7 +674,7 @@ class GoogleApi(object):
                 return data
 
         id_lock = asyncio.Event(loop=self.loop)
-        self.get_pano_id_locks[id] = id_lock
+        self.get_pano_id_locks[id_b] = id_lock
         try:
             async with self.session.get(
                     'http://cbks0.googleapis.com/cbk',
@@ -710,11 +696,11 @@ class GoogleApi(object):
             return data
         finally:
             id_lock.set()
-            del self.get_pano_id_locks[id]
+            del self.get_pano_id_locks[id_b]
 
     async def get_pano_img(self, id, heading):
-        heading_s = '{:.1f}'.format(heading)
-        key_b = '{}-{}'.format(id, heading_s).encode('ascii')
+        heading = round(heading, 1) % 360
+        key_b = id_decode(id) + struct.pack('H', int(heading * 100))
 
         key_lock = self.get_pano_img_locks.get(key_b)
         if key_lock:
@@ -735,8 +721,8 @@ class GoogleApi(object):
                     params={
                         'size': '640x480',
                         'pano': id,
-                        'heading': heading_s,
-                        'fov': 110,
+                        'heading': str(heading),
+                        'fov': str(110),
                         'key': self.api_key,
                     }) as r:
                 r.raise_for_status()
@@ -756,7 +742,7 @@ class GoogleApi(object):
                 await asyncio.sleep(10)
             finally:
                 get_pano_id_too_write = list(self.get_pano_id_unwriten_cache.items())
-                get_pano_img_too_write = list(self.get_pano_id_unwriten_cache.items())
+                get_pano_img_too_write = list(self.get_pano_img_unwriten_cache.items())
                 self.has_unwriten_cache_items.clear()
                 try:
                     await self.loop.run_in_executor(None, self._write_cache_items, get_pano_id_too_write, get_pano_img_too_write)

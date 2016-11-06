@@ -16,6 +16,5 @@
 * Removing pano chain items.
 * Option to show bad yaw panos and visited non route panos
 * Use lmbdb for all storage.
-* Better key storage for panoid (base64 decode)
-* Struct storage and ws transmission for route and panos for better space efficiency.
+* Use msgpack for websocket.
 * Expulsion for cached images.

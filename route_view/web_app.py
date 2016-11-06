@@ -6,6 +6,7 @@ import os
 from collections import defaultdict
 from functools import partial
 import io
+import base64
 
 from htmlwrite import Writer, Tag
 from markupsafe import Markup
@@ -47,7 +48,7 @@ def make_aio_app(loop, settings, google_api):
     app.router.add_route('POST', '/upload', upload_route)
     app.router.add_route('GET', '/route_sock/{route_id}/', handler=route_ws, name='route_ws')
     app.router.add_route('GET', '/view/{route_id}/', handler=partial(route_view_handler, route_view_static), name='route_view')
-    app.router.add_route('GET', '/img/{pano_id}/{heading}', handler=img_handler, name='img')
+    app.router.add_route('GET', '/img/{pano_id_and_heading}', handler=img_handler, name='img')
 
     route_view.auth.config_aio_app(app, settings)
     return app
@@ -99,7 +100,7 @@ def add_static_resource(app, resource_name, route, *args, **kwargs):
         body = body_processor(app, body)
     kwargs['body'] = body
     headers = kwargs.setdefault('headers', {})
-    etag = hashlib.sha1(body).hexdigest()
+    etag = base64.urlsafe_b64encode(hashlib.sha1(body).digest()).decode('ascii')
     headers['ETag'] = etag
     app['route_view.static_etags'][resource_name] = etag
 
@@ -253,12 +254,18 @@ def json_encode(obj):
 
 
 async def img_handler(request):
-    if request.if_modified_since:
+    pano_id, _, heading = request.match_info['pano_id_and_heading'].rpartition('~')
+    heading = float(heading)
+    img = await request.app['route_view.google_api'].get_pano_img(pano_id, heading)
+    etag = base64.urlsafe_b64encode(hashlib.sha1(img).digest()).decode('ascii')
+
+    if request.headers.get('If-None-Match') == etag:
         # since these images can be cached indefinitely, return not modified
         return web.Response(status=304)
     else:
-        pano_id = request.match_info['pano_id']
-        heading = request.match_info['heading']
-        heading = float(heading)
-        img = await request.app['route_view.google_api'].get_pano_img(pano_id, heading)
-        return web.Response(body=img, headers=(('Cache-Control', 'public, max-age=31536000'), ('Content-Type', 'image/jpeg')))
+
+        return web.Response(body=img, headers=(
+            ('Cache-Control', 'public, max-age=31536000'),
+            ('Content-Type', 'image/jpeg'),
+            ('ETag', etag),
+        ))
