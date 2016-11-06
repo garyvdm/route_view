@@ -639,7 +639,7 @@ class GoogleApi(object):
                 'http://cbks0.googleapis.com/cbk',
                 params={
                     'output': 'json',
-                    'radius': round(radius),
+                    'radius': str(round(radius)),
                     'll': latlng_urlstr(point),
                     'key': self.api_key,
                 }) as r:
