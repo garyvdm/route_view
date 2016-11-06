@@ -35,15 +35,19 @@ def make_aio_app(loop, settings, google_api):
             aiohttp_debugtoolbar.setup(app, **settings.get('debugtoolbar_settings', {}))
 
     add_static = partial(add_static_resource, app)
-    add_static('static/view.html', '/view/{route_id}/', content_type='text/html', charset='utf8',
-               body_processor=lambda app, body: body.decode('utf8').format(api_key=settings['api_key']).encode('utf8'))
     add_static('static/view.js', '/static/view.js', content_type='application/javascript', charset='utf8',)
     add_static('static/media-playback-start-symbolic.png', '/static/play.png', content_type='image/png')
     add_static('static/media-playback-pause-symbolic.png', '/static/pause.png', content_type='image/png')
 
+    route_view_static = add_static(
+        'static/view.html', None, content_type='text/html', charset='utf8',
+        body_processor=lambda app, body: body.decode('utf8').format(api_key=settings['api_key']).encode('utf8'))
+
     app.router.add_route('GET', '/', home)
     app.router.add_route('POST', '/upload', upload_route)
-    app.router.add_route('*', '/route_sock/{route_id}/', handler=route_ws, name='route_ws')
+    app.router.add_route('GET', '/route_sock/{route_id}/', handler=route_ws, name='route_ws')
+    app.router.add_route('GET', '/view/{route_id}/', handler=partial(route_view_handler, route_view_static), name='route_view')
+
     route_view.auth.config_aio_app(app, settings)
     return app
 
@@ -98,7 +102,7 @@ def add_static_resource(app, resource_name, route, *args, **kwargs):
     headers['ETag'] = etag
     app['route_view.static_etags'][resource_name] = etag
 
-    def static_resource_handler(request):
+    async def static_resource_handler(request):
         if request.headers.get('If-None-Match', '') == etag:
             return web.Response(status=304)
         else:
@@ -106,21 +110,24 @@ def add_static_resource(app, resource_name, route, *args, **kwargs):
             return web.Response(*args, **kwargs)
 
     # route = route.format(etag[:6])
-    app.router.add_route('GET', route, static_resource_handler, name=slugify(resource_name))
+    if route:
+        app.router.add_route('GET', route, static_resource_handler, name=slugify(resource_name))
     return static_resource_handler
 
 async def upload_route(request):
+    app = request.app
     data = await request.post()
     upload_file = data['gpx'].file.read()
     name = data['gpx'].filename
-    app = request.app
+    user = await route_view.auth.get_user_or_login(request)
+
     route_id = mk_id()
     route_dir_route = os.path.join(app['route_view.settings']['data_path'], 'routes', route_id)
     os.mkdir(route_dir_route)
     route = Route(
         id=route_id, name=name, dir_route=route_dir_route,
         change_callback=partial(change_callback, request.app['route_view.routes_sessions'][route_id]),
-        google_api=app['route_view.google_api'])
+        google_api=app['route_view.google_api'], owner=user.id)
     app['route_view.routes'][route_id] = route
     await route.load_route_from_gpx(upload_file)
     await route.save_metadata()
@@ -135,10 +142,54 @@ async def load_route(app, route_id):
     route = app['route_view.routes'].get(route_id)
     if route is None:
         route_dir_route = os.path.join(app['route_view.settings']['data_path'], 'routes', route_id)
-        route = await (Route.load(route_id, route_dir_route, partial(change_callback, app['route_view.routes_sessions'][route_id])))
+        try:
+            route = await (Route.load(route_id, route_dir_route, partial(change_callback, app['route_view.routes_sessions'][route_id])))
+        except FileNotFoundError as e:
+            raise KeyError() from e
+
         route.google_api = app['route_view.google_api']
         app['route_view.routes'][route_id] = route
     return route
+
+
+async def request_has_access_to_route(request, route):
+    if not route.private:
+        return True
+    user = await route_view.auth.get_user_or_login(request)
+    return route.id in user.routes
+
+
+async def route_view_handler(route_view_static, request):
+    route_id = request.match_info['route_id']
+    try:
+        route = await load_route(request.app, route_id)
+    except KeyError:
+        writer = Writer(io.StringIO())
+        w = writer.w
+        c = writer.c
+        w(Markup('<!DOCTYPE html>'))
+        with c(Tag('html')):
+            with c(Tag('head')):
+                w(Tag('title', c='Route not found'))
+            with c(Tag('body')):
+                w(Tag('h1', c='This route does not exist.'))
+                await route_view.auth.render_login(request, writer)
+        return web.Response(status=404, text=writer.out_file.getvalue(), content_type='text/html')
+
+    if not await request_has_access_to_route(request, route):
+        writer = Writer(io.StringIO())
+        w = writer.w
+        c = writer.c
+        w(Markup('<!DOCTYPE html>'))
+        with c(Tag('html')):
+            with c(Tag('head')):
+                w(Tag('title', c='Route Permission Denied'))
+            with c(Tag('body')):
+                w(Tag('h1', c='You do not have permission to view this route.'))
+                await route_view.auth.render_login(request, writer)
+        return web.Response(status=403, text=writer.out_file.getvalue(), content_type='text/html')
+    else:
+        return await route_view_static(request)
 
 
 async def route_ws(request):
@@ -147,6 +198,12 @@ async def route_ws(request):
 
     route_id = request.match_info['route_id']
     route = await load_route(request.app, route_id)
+
+    if not await request_has_access_to_route(request, route):
+        ws.send_str(json.dumps({'error': 'no permission'}))
+        await ws.close()
+        return ws
+
     await route.ensure_data_loaded()
 
     route_sessions = request.app['route_view.routes_sessions'][route_id]

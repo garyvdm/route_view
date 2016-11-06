@@ -59,7 +59,7 @@ class IndexedPoint(Point):
         return Point(self.lat, self.lng)
 
 
-route_meta_attrs = {'name'}
+route_meta_attrs = {'name', 'owner', 'private'}
 route_route_attrs = {'route_points', 'route_bounds', 'pano_chain'}
 route_status_attrs = {'processing_complete', 'processing_status'}
 route_meta_and_status_attrs = route_meta_attrs | route_status_attrs
@@ -71,6 +71,8 @@ class Route(object):
     dir_route = attr.ib()
     change_callback = attr.ib()
     name = attr.ib(default=None)
+    owner = attr.ib(default=None)
+    private = attr.ib(default=True)
     process_task = attr.ib(default=None, init=False)
     data_loaded = attr.ib(default=False, init=False)
     processing_complete = attr.ib(default=False)
