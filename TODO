@@ -3,7 +3,6 @@
 * Route import from ridewithgps (no oauth mean this might not happend).
 * Show waypoints from file.
 * If rotatable panoramic is moved to point on route, change play positon to that point.
-* Proxy & cache images.
 * Route sharing.
 * Show elevation graph.
 * Speed selection.
@@ -16,3 +15,7 @@
 * Show image meta data (location and date.)
 * Removing pano chain items.
 * Option to show bad yaw panos and visited non route panos
+* Use lmbdb for all storage.
+* Better key storage for panoid (base64 decode)
+* Struct storage and ws transmission for route and panos for better space efficiency.
+* Expulsion for cached images.

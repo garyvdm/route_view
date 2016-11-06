@@ -47,6 +47,7 @@ def make_aio_app(loop, settings, google_api):
     app.router.add_route('POST', '/upload', upload_route)
     app.router.add_route('GET', '/route_sock/{route_id}/', handler=route_ws, name='route_ws')
     app.router.add_route('GET', '/view/{route_id}/', handler=partial(route_view_handler, route_view_static), name='route_view')
+    app.router.add_route('GET', '/img/{pano_id}/{heading}', handler=img_handler, name='img')
 
     route_view.auth.config_aio_app(app, settings)
     return app
@@ -249,3 +250,15 @@ point_json_attrs = {'lat', 'lng'}
 def json_encode(obj):
     if isinstance(obj, Point):
         return attr.asdict(obj, filter=lambda a, v: a.name in point_json_attrs)
+
+
+async def img_handler(request):
+    if request.if_modified_since:
+        # since these images can be cached indefinitely, return not modified
+        return web.Response(status=304)
+    else:
+        pano_id = request.match_info['pano_id']
+        heading = request.match_info['heading']
+        heading = float(heading)
+        img = await request.app['route_view.google_api'].get_pano_img(pano_id, heading)
+        return web.Response(body=img, headers=(('Cache-Control', 'public, max-age=31536000'), ('Content-Type', 'image/jpeg')))

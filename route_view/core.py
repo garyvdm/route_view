@@ -402,6 +402,7 @@ class Route(object):
                         no_pano_link = True
                     else:
                         heading = get_azimuth_to_distance_on_route(inverse_line_cached, c_point, self.route_points[point_pair[1].index:], 50)
+                        heading = round(heading, 1)
                         c_point_dist = point_pair[1].distance - distance(point_pair[1], c_point)
                         distance_from_last = c_point_dist - last_at_distance
 
@@ -600,11 +601,17 @@ class GoogleApi(object):
         self.session = aiohttp.ClientSession()
         self.api_key = api_key
         self.lmdb_env = lmdb_env
-        self.lmdb_db = lmdb_env.open_db(b'api_cache')
         self.loop = loop
-        self.unwriten_cache_items = {}
         self.has_unwriten_cache_items = asyncio.Event(loop=loop)
+
+        self.get_pano_id_db = lmdb_env.open_db(b'api_cache')
+        self.get_pano_id_unwriten_cache = {}
         self.get_pano_id_locks = {}
+
+        self.get_pano_img_db = lmdb_env.open_db(b'img_cache')
+        self.get_pano_img_unwriten_cache = {}
+        self.get_pano_img_locks = {}
+
         self.reader_tx = self.lmdb_env.begin()
 
     def __enter__(self):
@@ -629,9 +636,9 @@ class GoogleApi(object):
         key = 'll{:=+3.8f}{:=+3.8f}-{}'.format(point.lat, point.lng, radius)
         key_b = key.encode('ascii')
 
-        id_b = self.unwriten_cache_items.get(key_b)
+        id_b = self.get_pano_id_unwriten_cache.get(key_b)
         if id_b is None:
-            id_b = self.reader_tx.get(key_b, db=self.lmdb_db)
+            id_b = self.reader_tx.get(key_b, db=self.get_pano_id_db)
 
         if id_b:
             return (await self.get_pano_id(id_b.decode()))
@@ -653,8 +660,8 @@ class GoogleApi(object):
                 raise
             if data:
                 id_b = data['Location']['panoId'].encode('ascii')
-                self.unwriten_cache_items[key_b] = id_b
-                self.unwriten_cache_items[id_b] = msgpack.dumps(data, encoding='utf-8')
+                self.get_pano_id_unwriten_cache[key_b] = id_b
+                self.get_pano_id_unwriten_cache[id_b] = msgpack.dumps(data, encoding='utf-8')
                 self.has_unwriten_cache_items.set()
             return data
 
@@ -665,9 +672,9 @@ class GoogleApi(object):
         if id_lock:
             await id_lock.wait()
 
-        text_b = self.unwriten_cache_items.get(id_b)
+        text_b = self.get_pano_id_unwriten_cache.get(id_b)
         if text_b is None:
-            text_b = self.reader_tx.get(id_b, db=self.lmdb_db)
+            text_b = self.reader_tx.get(id_b, db=self.get_pano_id_db)
 
         if text_b:
             # If the whole route is cached, we may end up blocking for a long time. quick sleep so we don't
@@ -698,12 +705,49 @@ class GoogleApi(object):
                 logging.error('Bad JSON from api: {}\n {}'.format(e, text))
                 raise
 
-            self.unwriten_cache_items[id_b] = msgpack.dumps(data, encoding='utf-8')
+            self.get_pano_id_unwriten_cache[id_b] = msgpack.dumps(data, encoding='utf-8')
             self.has_unwriten_cache_items.set()
             return data
         finally:
             id_lock.set()
             del self.get_pano_id_locks[id]
+
+    async def get_pano_img(self, id, heading):
+        heading_s = '{:.1f}'.format(heading)
+        key_b = '{}-{}'.format(id, heading_s).encode('ascii')
+
+        key_lock = self.get_pano_img_locks.get(key_b)
+        if key_lock:
+            await key_lock.wait()
+
+        img = self.get_pano_img_unwriten_cache.get(key_b)
+        if img is None:
+            img = self.reader_tx.get(key_b, db=self.get_pano_img_db)
+
+        if img:
+            return img
+
+        key_lock = asyncio.Event(loop=self.loop)
+        self.get_pano_img_locks[key_b] = key_lock
+        try:
+            async with self.session.get(
+                    'http://maps.googleapis.com/maps/api/streetview',
+                    params={
+                        'size': '640x480',
+                        'pano': id,
+                        'heading': heading_s,
+                        'fov': 110,
+                        'key': self.api_key,
+                    }) as r:
+                r.raise_for_status()
+                img = await r.read()
+
+            self.get_pano_img_unwriten_cache[key_b] = img
+            self.has_unwriten_cache_items.set()
+            return img
+        finally:
+            key_lock.set()
+            del self.get_pano_img_locks[key_b]
 
     async def write_cache_items(self):
         while True:
@@ -711,18 +755,23 @@ class GoogleApi(object):
             try:
                 await asyncio.sleep(10)
             finally:
-                too_write = list(self.unwriten_cache_items.items())
+                get_pano_id_too_write = list(self.get_pano_id_unwriten_cache.items())
+                get_pano_img_too_write = list(self.get_pano_id_unwriten_cache.items())
                 self.has_unwriten_cache_items.clear()
                 try:
-                    await self.loop.run_in_executor(None, self._write_cache_items, too_write)
-                    for key, value in too_write:
-                        del self.unwriten_cache_items[key]
+                    await self.loop.run_in_executor(None, self._write_cache_items, get_pano_id_too_write, get_pano_img_too_write)
+                    for key, value in get_pano_id_too_write:
+                        del self.get_pano_id_unwriten_cache[key]
+                    for key, value in get_pano_img_too_write:
+                        del self.get_pano_img_unwriten_cache[key]
                     self.reader_tx.abort()
                     self.reader_tx = self.lmdb_env.begin()
                 except Exception:
-                    logging.exception('Error writeing cache items:')
+                    logging.exception('Error writing cache items:')
 
-    def _write_cache_items(self, too_write):
+    def _write_cache_items(self, get_pano_id_too_write, get_pano_img_too_write):
         with self.lmdb_env.begin(write=True) as tx:
-            for key, value in too_write:
-                tx.put(key, value, db=self.lmdb_db)
+            for key, value in get_pano_id_too_write:
+                tx.put(key, value, db=self.get_pano_id_db)
+            for key, value in get_pano_img_too_write:
+                tx.put(key, value, db=self.get_pano_img_db)

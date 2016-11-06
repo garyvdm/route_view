@@ -265,7 +265,7 @@ document.addEventListener('DOMContentLoaded', function() {
         var pano = panos[pano_index];
         if (pano.type == 'pano'){
             pano.image = new Image();
-            pano.image.src = 'https://maps.googleapis.com/maps/api/streetview?size=640x480&pano=' + pano.id + '&heading=' + pano.heading + '&sensor=false&fov=110' + api_key
+            pano.image.src = '/img/' + pano.id + '/' + pano.heading
             num_panos_loading++;
             pano.image.onload = function(){
                 num_panos_loading--;
