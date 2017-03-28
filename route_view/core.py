@@ -600,7 +600,7 @@ def deg_wrap_to_closest(deg, to_deg):
 class GoogleApi(object):
 
     def __init__(self, api_key, lmdb_env, loop):
-        self.session = aiohttp.ClientSession()
+        self.session = aiohttp.ClientSession(loop=loop)
         self.api_key = api_key
         self.lmdb_env = lmdb_env
         self.loop = loop
