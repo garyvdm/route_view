@@ -11,7 +11,7 @@ import base64
 from htmlwrite import Writer, Tag
 from markupsafe import Markup
 import attr
-from aiohttp import web, MsgType
+from aiohttp import web, WSMsgType
 from slugify import slugify
 
 from route_view.core import Route, Point
@@ -218,7 +218,7 @@ async def route_ws(request):
 
     try:
         async for msg in ws:
-            if msg.tp == MsgType.text:
+            if msg.tp == WSMsgType.text:
                 data = json.loads(msg.data)
                 # logging.debug(data)
                 if data == 'cancel':
@@ -227,9 +227,9 @@ async def route_ws(request):
                     await route.resume_processing()
                 if isinstance(data, dict) and 'add_pano_chain_item' in data:
                     await route.add_pano_chain_item(*data['add_pano_chain_item'])
-            if msg.tp == MsgType.close:
+            if msg.tp == WSMsgType.close:
                 await ws.close()
-            if msg.tp == MsgType.error:
+            if msg.tp == WSMsgType.error:
                 raise ws.exception()
     finally:
         route_sessions.remove(ws)
