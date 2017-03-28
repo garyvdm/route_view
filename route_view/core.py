@@ -179,16 +179,23 @@ class Route(object):
                         msgpack.pack(pano, f, default=panos_json_encode)
                 self.panos_len_at_last_save = len(self.panos)
 
-    async def load_route_from_gpx(self, gpx):
-        with open(os.path.join(self.dir_route, 'upload.gpx'), 'wb') as f:
-            f.write(gpx)
+    async def load_route_from_upload(self, upload):
+        if upload.startswith(b'<?xml'):
+            xml_doc = xml.fromstring(upload)
+            if xml_doc.tag in ('{http://www.topografix.com/GPX/1/1}gpx', '{http://www.topografix.com/GPX/1/0}gpx'):
+                await(self.load_gpx(xml_doc))
+        assert len(self.route_points) > 2
 
-        gpx_ns = {'gpx11': 'http://www.topografix.com/GPX/1/1', }
-        doc = xml.fromstring(gpx)
-        self.name = ', '.join((item.text for item in doc.findall('./gpx11:trk/gpx11:name', gpx_ns)))
+    async def load_gpx(self, xml_doc):
+        gpx_ns = {
+            '1.0': {'gpx': 'http://www.topografix.com/GPX/1/0', },
+            '1.1': {'gpx': 'http://www.topografix.com/GPX/1/1', },
+        }[xml_doc.attrib['version']]
+
+        self.name = ', '.join((item.text for item in xml_doc.findall('./gpx:trk/gpx:name', gpx_ns)))
         await self.save_metadata()
 
-        trkpts = doc.findall('./gpx11:trk/gpx11:trkseg/gpx11:trkpt', gpx_ns)
+        trkpts = xml_doc.findall('./gpx:trk/gpx:trkseg/gpx:trkpt', gpx_ns)
         points = route_with_distance_and_index((float(trkpt.attrib['lat']), float(trkpt.attrib['lon'])) for trkpt in trkpts)
         await self.set_route_points(points)
 

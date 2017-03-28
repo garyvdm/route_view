@@ -132,7 +132,7 @@ async def upload_route(request):
         change_callback=partial(change_callback, request.app['route_view.routes_sessions'][route_id]),
         google_api=app['route_view.google_api'], owner=user.id)
     app['route_view.routes'][route_id] = route
-    await route.load_route_from_gpx(upload_file)
+    await route.load_route_from_upload(upload_file)
     await route.save_metadata()
     await route.start_processing()
     user = await route_view.auth.get_user_or_login(request)
