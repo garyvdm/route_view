@@ -116,6 +116,7 @@ def add_static_resource(app, resource_name, route, *args, **kwargs):
         app.router.add_route('GET', route, static_resource_handler, name=slugify(resource_name))
     return static_resource_handler
 
+
 async def upload_route(request):
     app = request.app
     data = await request.post()
@@ -244,6 +245,7 @@ def change_callback(route_sessions, change):
             session.send_str(msg)
         except:
             logging.exception('Error sending to client: ')
+
 
 point_json_attrs = {'lat', 'lng'}
 

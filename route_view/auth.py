@@ -179,6 +179,7 @@ async def render_login(request, writer):
             w('You are logged in as {0[first_name]} {0[last_name]} {1}.'.format(user_details, oauthids))
             w(Tag('a', href='/logout', c='Logout'))
 
+
 async def get_user_or_login(request):
     login = request['route_view.login']
     if login.user_id:
