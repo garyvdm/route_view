@@ -93,7 +93,7 @@ def main():
             settings['inet_port'] = port
         if args.unix:
             settings['server_type'] = 'unix'
-            settings['unix_route'] = args.unix
+            settings['unix_path'] = args.unix
         if args.dev:
             settings['debugtoolbar'] = True
             settings['aioserver_debug'] = True
@@ -136,7 +136,13 @@ def web_serve_cm(loop, settings, google_api):
     if settings['server_type'] == 'inet':
         srv = loop.run_until_complete(loop.create_server(handler, settings['inet_host'], settings['inet_port']))
     elif settings['server_type'] == 'unix':
-        srv = loop.run_until_complete(loop.create_unix_server(handler, settings['unix_route']))
+        unix_path = settings['unix_path']
+        if os.path.exists(unix_path):
+            try:
+                os.unlink(unix_path)
+            except OSError:
+                logging.exception("Could not unlink socket '{}'".format(unix_path))
+        srv = loop.run_until_complete(loop.create_unix_server(handler, unix_path))
 
     for sock in srv.sockets:
         if sock.family in (socket.AF_INET, socket.AF_INET6):
