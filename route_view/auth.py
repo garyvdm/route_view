@@ -90,6 +90,7 @@ class Login(StorageType):
     creation_timestamp = attr.ib(default=attr.Factory(datetime.datetime.now))
     access_timestamp = attr.ib(default=attr.Factory(lambda: datetime.datetime.fromtimestamp(0)))
     access_timestamp_change_delta = datetime.timedelta(hours=1)
+    admin = False
 
     async def access(self):
         now = datetime.datetime.now()
@@ -119,6 +120,7 @@ class User(StorageType):
     oauth_details = attr.ib(default=attr.Factory(dict))
     tokens = attr.ib(default=attr.Factory(dict))
     routes = attr.ib(default=attr.Factory(list))
+    admin =  attr.ib(default=False)
 
 
 async def login_middleware_factory(app, handler):

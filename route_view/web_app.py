@@ -159,6 +159,8 @@ async def request_has_access_to_route(request, route):
     if not route.private:
         return True
     user = await route_view.auth.get_user_or_login(request)
+    if user.admin:
+        return True
     return route.id in user.routes
 
 
