@@ -147,6 +147,7 @@ def config_aio_app(app, settings):
     data_path = settings['data_path']
     storage_types = (Login, User, OAuthID)
     app['route_view.oauth_providers'] = settings['oauth_providers']
+    app['route_view.oauth_redirect_uri'] = settings.get('oauth_redirect_uri')
     app['route_view.oauth_providers_by_name'] = {provider['name']: provider for provider in settings['oauth_providers']}
 
     for cls in storage_types:
@@ -199,8 +200,12 @@ async def oauth(request):
     Client = ClientRegistry.clients[provider]
     params = providers_by_name[provider]['init']
     client = Client(**params)
-    client.params['oauth_callback' if issubclass(Client, OAuth1Client) else 'redirect_uri'] = \
-        'http://%s%s' % (request.host, request.path)
+    redirect_uri = request.app['route_view.oauth_redirect_uri']
+    if not redirect_uri:
+        redirect_uri = f'http://{request.host}{request.path}'
+    else:
+        redirect_uri = f'{redirect_uri}{request.path}'
+    client.params['oauth_callback' if issubclass(Client, OAuth1Client) else 'redirect_uri'] = redirect_uri
 
     # Check if is not redirect from provider
     if client.shared_key not in request.query:
