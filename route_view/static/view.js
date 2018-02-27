@@ -42,7 +42,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     var split_route_name = window.location.pathname.split('/');
     var route_id = split_route_name[split_route_name.length - 2];
-    var ws = new WebSocket('ws://' + location.host + '/route_sock/' + route_id + '/');
+    var ws = new WebSocket(location.protocol.replace('http', 'ws') + '//' + location.host + '/route_sock/' + route_id + '/');
     var panos = [];
     var api_key = '';
     var route_points = [];
