@@ -137,8 +137,10 @@ def web_serve_cm(loop, settings, google_api):
                 logging.exception("Could not unlink socket '{}'".format(unix_path))
         srv = loop.run_until_complete(loop.create_unix_server(handler, unix_path))
         if 'unix_chmod' in settings:
+            logging.info(f'chmod {unix_path} to {settings["unix_chmod"]}')
             os.chmod(unix_path, settings['unix_chmod'])
         if 'unix_chown' in settings:
+            logging.info(f'chown {unix_path} to {settings["unix_chown"]}')
             shutil.chown(unix_path, **settings['unix_chown'])
 
     for sock in srv.sockets:
