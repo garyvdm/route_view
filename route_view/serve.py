@@ -114,19 +114,21 @@ async def serve(loop, settings, make_app):
     if settings['server_type'] == 'inet':
         site = TCPSiteSocketName(runner, settings['inet_host'], settings['inet_port'])
     elif settings['server_type'] == 'unix':
-        unix_path = settings['unix_path']
+        unix_path = os.path.abspath(settings['unix_path'])
         if os.path.exists(unix_path):
             try:
                 os.unlink(unix_path)
             except OSError:
                 logging.exception("Could not unlink socket '{}'".format(unix_path))
         site = UnixSite(runner, unix_path)
+
+    await site.start()
+
+    if settings['server_type'] == 'unix':
         if 'unix_chmod' in settings:
             os.chmod(unix_path, settings['unix_chmod'])
         if 'unix_chown' in settings:
             shutil.chown(unix_path, **settings['unix_chown'])
-
-    await site.start()
 
     logging.info(f'Serving on {site.name}')
 
