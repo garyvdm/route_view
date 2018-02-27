@@ -4,6 +4,7 @@ import contextlib
 import copy
 import logging.config
 import os
+import shutil
 import signal
 import socket
 import sys
@@ -25,7 +26,6 @@ defaults_yaml = """
     lmdb_path: data/lmdb
     lmdb_map_size: 1250000000   # 10 GB
 
-
     logging:
         version: 1
         disable_existing_loggers: false
@@ -44,9 +44,9 @@ defaults_yaml = """
             handlers: [console, ]
 
         loggers:
-        aiohttp.access:
-            level: ERROR
-            qualname: aiohttp.access
+            aiohttp.access:
+                level: ERROR
+                qualname: aiohttp.access
 
 """
 
@@ -136,7 +136,10 @@ def web_serve_cm(loop, settings, google_api):
             except OSError:
                 logging.exception("Could not unlink socket '{}'".format(unix_path))
         srv = loop.run_until_complete(loop.create_unix_server(handler, unix_path))
-        os.chmod(unix_path, 660)
+        if 'unix_chmod' in settings:
+            os.chmod(unix_path, settings['unix_chmod'])
+        if 'unix_chown' in settings:
+            shutil.chown(unix_path, **settings['unix_chown'])
 
     for sock in srv.sockets:
         if sock.family in (socket.AF_INET, socket.AF_INET6):
