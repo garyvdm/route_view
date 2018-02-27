@@ -3,7 +3,7 @@ aiohttp
 aioauth-client
 cachetools
 htmlwrite
-msgpack-python
+msgpack
 more-itertools
 nvector
 pyyaml

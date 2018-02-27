@@ -203,7 +203,7 @@ async def oauth(request):
         'http://%s%s' % (request.host, request.path)
 
     # Check if is not redirect from provider
-    if client.shared_key not in request.GET:
+    if client.shared_key not in request.query:
 
         # For oauth1 we need more work
         if isinstance(client, OAuth1Client):
@@ -222,8 +222,8 @@ async def oauth(request):
         client.oauth_token_secret = request.app.secret
         client.oauth_token = request.app.token
 
-    token = (await client.get_access_token(request.GET))[0]
-    user_provider_details, info = await client.user_info()
+    token = (await client.get_access_token(request.query))[0]
+    user_provider_details, user_data = await client.user_info()
     oauthid_id = '{}:{}'.format(client.name, user_provider_details.username or user_provider_details.id)
     oauthid = await OAuthID.load(request.app, oauthid_id)
     # TODO merging of users / logins
@@ -235,7 +235,7 @@ async def oauth(request):
     user = await User.load(request.app, oauthid.user_id)
     if user.primary_oauthid is None:
         user.primary_oauthid = oauthid.id
-    user.oauth_details[oauthid.id] = user_provider_details.__dict__
+    user.oauth_details[oauthid.id] = dict(client.user_parse(user_data))
     user.tokens[oauthid.id] = token
     await user.save()
 
