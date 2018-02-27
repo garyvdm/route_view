@@ -1,6 +1,6 @@
-import unittest
-import textwrap
 import tempfile
+import textwrap
+import unittest
 
 from route_view.core import IndexedPoint, Route
 from route_view.tests import unittest_run_loop

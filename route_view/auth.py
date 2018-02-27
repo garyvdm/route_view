@@ -1,17 +1,17 @@
-import os
 import contextlib
 import datetime
+import os
 
+import attr
 import cachetools
 import yaml
-import attr
-from aiohttp import web
-from htmlwrite import Tag
 from aioauth_client import (
+    ClientRegistry,
     OAuth1Client,
     OAuth2Client,
-    ClientRegistry,
 )
+from aiohttp import web
+from htmlwrite import Tag
 
 from route_view.util import (
     mk_id,
@@ -120,7 +120,7 @@ class User(StorageType):
     oauth_details = attr.ib(default=attr.Factory(dict))
     tokens = attr.ib(default=attr.Factory(dict))
     routes = attr.ib(default=attr.Factory(list))
-    admin =  attr.ib(default=False)
+    admin = attr.ib(default=False)
 
 
 async def login_middleware_factory(app, handler):

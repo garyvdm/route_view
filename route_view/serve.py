@@ -1,19 +1,19 @@
 import argparse
+import asyncio
+import contextlib
 import copy
 import logging.config
-import asyncio
-import socket
-import contextlib
 import os
 import signal
+import socket
 import sys
 
+import lmdb
 import uvloop
 import yaml
-import lmdb
 
-import route_view.web_app
 import route_view.core
+import route_view.web_app
 
 defaults_yaml = """
     server_type: inet

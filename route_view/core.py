@@ -1,12 +1,12 @@
-import os
-import logging
-import json
-import functools
 import asyncio
-import itertools
-import threading
 import collections
+import functools
+import itertools
+import json
+import logging
+import os
 import struct
+import threading
 import xml.etree.ElementTree as xml
 
 import aiohttp
@@ -14,25 +14,25 @@ import attr
 import geographiclib.geodesic
 import msgpack
 from more_itertools import (
-    peekable,
     chunked,
-)
-from nvector import (
-    unit,
-    lat_lon2n_E,
-    n_E2lat_lon,
+    peekable,
 )
 from numpy import (
-    cross,
-    dot,
     arccos,
+    cross,
     deg2rad,
+    dot,
     rad2deg,
+)
+from nvector import (
+    lat_lon2n_E,
+    n_E2lat_lon,
+    unit,
 )
 
 from route_view.util import (
-    runs_in_executor,
     id_decode,
+    runs_in_executor,
 )
 
 

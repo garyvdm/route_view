@@ -1,21 +1,21 @@
-import logging
+import base64
 import hashlib
+import io
 import json
-import pkg_resources
+import logging
 import os
 from collections import defaultdict
 from functools import partial
-import io
-import base64
 
-from htmlwrite import Writer, Tag
-from markupsafe import Markup
 import attr
+import pkg_resources
 from aiohttp import web, WSMsgType
+from htmlwrite import Tag, Writer
+from markupsafe import Markup
 from slugify import slugify
 
-from route_view.core import Route, Point
 import route_view.auth
+from route_view.core import Point, Route
 from route_view.util import mk_id
 
 
@@ -245,7 +245,7 @@ def change_callback(route_sessions, change):
     for session in route_sessions:
         try:
             session.send_str(msg)
-        except:
+        except Exception:
             logging.exception('Error sending to client: ')
 
 
