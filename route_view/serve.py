@@ -1,17 +1,16 @@
 import argparse
 import asyncio
-import contextlib
 import copy
 import logging.config
 import os
 import shutil
 import signal
-import socket
 import sys
 
-import lmdb
 import uvloop
 import yaml
+from aiohttp.web import AppRunner, TCPSite, UnixSite
+from yarl import URL
 
 import route_view.core
 import route_view.web_app
@@ -96,23 +95,8 @@ def main():
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
         loop = asyncio.get_event_loop()
 
-        with contextlib.suppress(FileExistsError):
-            os.mkdir(settings['data_path'])
-        with contextlib.suppress(FileExistsError):
-            os.mkdir(os.path.join(settings['data_path'], 'routes'))
-
-        for signame in ('SIGINT', 'SIGTERM'):
-            loop.add_signal_handler(getattr(signal, signame), loop.stop)
-
         try:
-            with contextlib.ExitStack() as stack:
-                lmdb_env = stack.enter_context(lmdb.open(settings['lmdb_path'], max_dbs=10, map_size=settings['lmdb_map_size']))
-                google_api = stack.enter_context(route_view.core.GoogleApi(settings['api_key'], lmdb_env, asyncio.get_event_loop()))
-                stack.enter_context(web_serve_cm(loop, settings, google_api))
-                try:
-                    loop.run_forever()
-                except KeyboardInterrupt:
-                    pass
+            loop.run_until_complete(serve(loop, settings, route_view.web_app.make_aio_app))
         finally:
             loop.close()
     except Exception:
@@ -120,14 +104,15 @@ def main():
         sys.exit(3)
 
 
-@contextlib.contextmanager
-def web_serve_cm(loop, settings, google_api):
-    app = route_view.web_app.make_aio_app(loop, settings, google_api)
+async def serve(loop, settings, make_app):
 
-    handler = app.make_handler(debug=settings.get('aioserver_debug', False))
+    app = await make_app(settings)
+    runner = AppRunner(app, debug=settings.get('aioserver_debug', False),
+                       access_log_format='%l %u %t "%r" %s %b "%{Referrer}i" "%{User-Agent}i"')
+    await runner.setup()
 
     if settings['server_type'] == 'inet':
-        srv = loop.run_until_complete(loop.create_server(handler, settings['inet_host'], settings['inet_port']))
+        site = TCPSiteSocketName(runner, settings['inet_host'], settings['inet_port'])
     elif settings['server_type'] == 'unix':
         unix_path = settings['unix_path']
         if os.path.exists(unix_path):
@@ -135,26 +120,35 @@ def web_serve_cm(loop, settings, google_api):
                 os.unlink(unix_path)
             except OSError:
                 logging.exception("Could not unlink socket '{}'".format(unix_path))
-        srv = loop.run_until_complete(loop.create_unix_server(handler, unix_path))
+        site = UnixSite(runner, unix_path)
         if 'unix_chmod' in settings:
-            logging.info(f'chmod {unix_path} to {settings["unix_chmod"]}')
             os.chmod(unix_path, settings['unix_chmod'])
         if 'unix_chown' in settings:
-            logging.info(f'chown {unix_path} to {settings["unix_chown"]}')
             shutil.chown(unix_path, **settings['unix_chown'])
 
-    for sock in srv.sockets:
-        if sock.family in (socket.AF_INET, socket.AF_INET6):
-            print('Serving on http://{}:{}'.format(*sock.getsockname()))
-            app.setdefault('host_urls', []).append('http://{}:{}'.format(*sock.getsockname()))
-        else:
-            print('Serving on {!r}'.format(sock))
+    await site.start()
+
+    logging.info(f'Serving on {site.name}')
 
     try:
-        yield
+        # Run forever (or we get interupt)
+        run_fut = asyncio.Future()
+        for signame in ('SIGINT', 'SIGTERM'):
+            loop.add_signal_handler(getattr(signal, signame), run_fut.set_result, None)
+        try:
+            await run_fut
+        finally:
+            for signame in ('SIGINT', 'SIGTERM'):
+                loop.remove_signal_handler(getattr(signal, signame))
     finally:
-        loop.run_until_complete(route_view.web_app.app_cancel_processing(app))
-        loop.run_until_complete(handler.finish_connections(1.0))
-        srv.close()
-        loop.run_until_complete(srv.wait_closed())
-        loop.run_until_complete(app.finish())
+        await site.stop()
+        await runner.cleanup()
+
+
+class TCPSiteSocketName(TCPSite):
+
+    @property
+    def name(self):
+        scheme = 'https' if self._ssl_context else 'http'
+        socks = [sock.getsockname() for sock in self._server.sockets]
+        return [str(URL.build(scheme=scheme, host=sock[0], port=sock[1])) for sock in socks]

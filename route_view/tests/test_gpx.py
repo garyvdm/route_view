@@ -26,7 +26,10 @@ class TestGpx(unittest.TestCase):
         """).lstrip('\n').encode()
 
         with tempfile.TemporaryDirectory() as tempdir:
-            route = Route(id=self.id(), name='foobar', dir_route=tempdir, change_callback=lambda foo: None)
+            async def change_callback(data):
+                pass
+
+            route = Route(id=self.id(), name='foobar', dir_route=tempdir, change_callback=change_callback)
             await route.load_route_from_upload(gpx)
             expected_points = [
                 IndexedPoint(lat=-26.09321, lng=27.98130, index=0, distance=0),
@@ -55,7 +58,10 @@ class TestGpx(unittest.TestCase):
         """).lstrip('\n').encode()
 
         with tempfile.TemporaryDirectory() as tempdir:
-            route = Route(id=self.id(), name='foobar', dir_route=tempdir, change_callback=lambda foo: None)
+            async def change_callback(data):
+                pass
+
+            route = Route(id=self.id(), name='foobar', dir_route=tempdir, change_callback=change_callback)
             await route.load_route_from_upload(gpx)
             expected_points = [
                 IndexedPoint(lat=-26.09321, lng=27.98130, index=0, distance=0),

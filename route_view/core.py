@@ -89,10 +89,10 @@ class Route(object):
 
     @classmethod
     @runs_in_executor
-    def load(cls, id, dir_route, new_pano_callback):
+    def load(cls, id, dir_route, change_callback):
         with open(os.path.join(dir_route, 'meta.json'), 'r') as f:
             meta = json.load(f)
-        return Route(id, dir_route, new_pano_callback, **meta)
+        return Route(id, dir_route, change_callback, **meta)
 
     @runs_in_executor
     def ensure_data_loaded(self):
@@ -128,7 +128,8 @@ class Route(object):
             self.data_loaded = True
 
             if self.processing_status.get('processing', True) and self.process_task is None:
-                self.set_status({'text': 'Processing unexpectedly cancelled.', 'cancelable': False, 'resumable': True, 'processing': False})
+                loop = asyncio.get_event_loop()
+                loop.run_until_complete(self.set_status({'text': 'Processing unexpectedly cancelled.', 'cancelable': False, 'resumable': True, 'processing': False}))
                 self.save_processing.__wrapped__(self)
 
     @runs_in_executor
@@ -213,7 +214,7 @@ class Route(object):
         await self.reset_processed()
         self.data_loaded = True
         self.processing_complete = False
-        self.change_callback({'route_bounds': self.route_bounds, 'route_points': self.route_points, 'route_distance': self.route_points[-1].distance})
+        await self.change_callback({'route_bounds': self.route_bounds, 'route_points': self.route_points, 'route_distance': self.route_points[-1].distance})
         await self.save_route()
 
     def get_existing_changes(self):
@@ -250,13 +251,13 @@ class Route(object):
             self.panos = self.panos[:i + 1]
             await self.clear_saved_panos()
             await self.save_processing()
-            self.change_callback({'reset_panos_index': i})
+            await self.change_callback({'reset_panos_index': i})
 
             await self.resume_processing()
 
-    def set_status(self, status):
+    async def set_status(self, status):
         self.processing_status = status
-        self.change_callback(attr.asdict(self, filter=lambda a, v: a.name in route_status_attrs))
+        await self.change_callback(attr.asdict(self, filter=lambda a, v: a.name in route_status_attrs))
 
     def process_task_done_callback(self, fut):
         try:
@@ -269,11 +270,11 @@ class Route(object):
         self.panos = []
         await self.clear_saved_panos()
         await self.save_processing()
-        self.change_callback({'reset_panos_index': -1})
+        await self.change_callback({'reset_panos_index': -1})
 
     async def process(self):
         google_api = self.google_api
-        self.set_status({'text': 'Downloading street view image metadata.', 'cancelable': True, 'resumable': False, 'processing': True})
+        await self.set_status({'text': 'Downloading street view image metadata.', 'cancelable': True, 'resumable': False, 'processing': True})
         try:
 
             if not self.panos:
@@ -309,7 +310,7 @@ class Route(object):
                     await has_new_panos.wait()
                     has_new_panos.clear()
                     self.panos.extend(new_panos)
-                    self.change_callback({'panos': new_panos})
+                    await self.change_callback({'panos': new_panos})
                     new_panos = []
 
                     if self.processing_complete:
@@ -450,7 +451,7 @@ class Route(object):
             new_panos[-1]['last'] = True
             self.processing_complete = True
             await send_changes_task
-            self.set_status({'text': 'Complete', 'cancelable': False, 'resumable': False, 'processing': False})
+            await self.set_status({'text': 'Complete', 'cancelable': False, 'resumable': False, 'processing': False})
         except asyncio.CancelledError:
             send_changes_task.cancel()
             try:
@@ -458,10 +459,10 @@ class Route(object):
             except asyncio.CancelledError:
                 pass
             logging.info('Processing cancelled.')
-            self.set_status({'text': 'Processing cancelled.', 'cancelable': False, 'resumable': True, 'processing': False})
+            await self.set_status({'text': 'Processing cancelled.', 'cancelable': False, 'resumable': True, 'processing': False})
         except Exception as e:
             logging.exception('Processing error: ')
-            self.set_status({'text': 'Processing error: {}'.format(e), 'cancelable': False, 'resumable': True, 'processing': False})
+            await self.set_status({'text': 'Processing error: {}'.format(e), 'cancelable': False, 'resumable': True, 'processing': False})
         finally:
             if last_save_task:
                 await asyncio.shield(last_save_task)
@@ -606,12 +607,11 @@ def deg_wrap_to_closest(deg, to_deg):
 
 class GoogleApi(object):
 
-    def __init__(self, api_key, lmdb_env, loop):
-        self.session = aiohttp.ClientSession(loop=loop)
+    def __init__(self, api_key, lmdb_env):
+        self.session = aiohttp.ClientSession()
         self.api_key = api_key
         self.lmdb_env = lmdb_env
-        self.loop = loop
-        self.has_unwriten_cache_items = asyncio.Event(loop=loop)
+        self.has_unwriten_cache_items = asyncio.Event()
 
         self.get_pano_id_db = lmdb_env.open_db(b'api_cache')
         self.get_pano_id_unwriten_cache = {}
@@ -623,18 +623,12 @@ class GoogleApi(object):
 
         self.reader_tx = self.lmdb_env.begin()
 
-    def __enter__(self):
-        return self.loop.run_until_complete(self.__aenter__())
-
-    def __exit__(self, *args):
-        return self.loop.run_until_complete(self.__aexit__(*args))
-
     async def __aenter__(self):
-        self.write_cache_items_fut = self.loop.create_task(self.write_cache_items())
+        self.write_cache_items_fut = asyncio.ensure_future(self.write_cache_items())
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        self.session.close()
+        await self.session.close()
         self.write_cache_items_fut.cancel()
         try:
             await self.write_cache_items_fut
@@ -680,7 +674,7 @@ class GoogleApi(object):
             else:
                 return data
 
-        id_lock = asyncio.Event(loop=self.loop)
+        id_lock = asyncio.Event()
         self.get_pano_id_locks[id_b] = id_lock
         try:
             async with self.session.get(
@@ -720,7 +714,7 @@ class GoogleApi(object):
         if img:
             return img
 
-        key_lock = asyncio.Event(loop=self.loop)
+        key_lock = asyncio.Event()
         self.get_pano_img_locks[key_b] = key_lock
         try:
             async with self.session.get(
@@ -751,8 +745,9 @@ class GoogleApi(object):
                 get_pano_id_too_write = list(self.get_pano_id_unwriten_cache.items())
                 get_pano_img_too_write = list(self.get_pano_img_unwriten_cache.items())
                 self.has_unwriten_cache_items.clear()
+                loop = asyncio.get_event_loop()
                 try:
-                    await self.loop.run_in_executor(None, self._write_cache_items, get_pano_id_too_write, get_pano_img_too_write)
+                    await loop.run_in_executor(None, self._write_cache_items, get_pano_id_too_write, get_pano_img_too_write)
                     for key, value in get_pano_id_too_write:
                         del self.get_pano_id_unwriten_cache[key]
                     for key, value in get_pano_img_too_write:

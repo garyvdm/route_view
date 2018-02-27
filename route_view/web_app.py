@@ -1,4 +1,5 @@
 import base64
+import contextlib
 import hashlib
 import io
 import json
@@ -8,6 +9,7 @@ from collections import defaultdict
 from functools import partial
 
 import attr
+import lmdb
 import pkg_resources
 from aiohttp import web, WSMsgType
 from htmlwrite import Tag, Writer
@@ -15,25 +17,17 @@ from markupsafe import Markup
 from slugify import slugify
 
 import route_view.auth
+from route_view.async_exit_stack import AsyncExitStack
 from route_view.core import Point, Route
 from route_view.util import mk_id
 
 
-def make_aio_app(loop, settings, google_api):
-    app = web.Application(loop=loop)
+async def make_aio_app(settings):
+    app = web.Application()
     app['route_view.settings'] = settings
-    app['route_view.google_api'] = google_api
     app['route_view.static_etags'] = {}
     app['route_view.routes'] = {}
     app['route_view.routes_sessions'] = defaultdict(list)
-
-    if settings['debugtoolbar']:
-        try:
-            import aiohttp_debugtoolbar
-        except ImportError:
-            logging.error('aiohttp_debugtoolbar is enabled, but not installed.')
-        else:
-            aiohttp_debugtoolbar.setup(app, **settings.get('debugtoolbar_settings', {}))
 
     add_static = partial(add_static_resource, app)
     add_static('static/view.js', '/static/view.js', content_type='application/javascript', charset='utf8',)
@@ -51,6 +45,19 @@ def make_aio_app(loop, settings, google_api):
     app.router.add_route('GET', '/img/{pano_id_and_heading}', handler=img_handler, name='img')
 
     route_view.auth.config_aio_app(app, settings)
+
+    app['stack'] = app_stack = AsyncExitStack()
+    await app_stack.__aenter__()
+    app.on_shutdown.append(shutdown)
+
+    with contextlib.suppress(FileExistsError):
+        os.mkdir(settings['data_path'])
+    with contextlib.suppress(FileExistsError):
+        os.mkdir(os.path.join(settings['data_path'], 'routes'))
+
+    lmdb_env = await app_stack.enter_context(lmdb.open(settings['lmdb_path'], max_dbs=10, map_size=settings['lmdb_map_size']))
+    app['route_view.google_api'] = await app_stack.enter_context(route_view.core.GoogleApi(settings['api_key'], lmdb_env))
+
     return app
 
 
@@ -81,7 +88,7 @@ async def home(request):
     return web.Response(text=writer.out_file.getvalue(), content_type='text/html')
 
 
-async def app_cancel_processing(app):
+async def shutdown(app):
     for route in app['route_view.routes'].values():
         if route.process_task:
             route.process_task.cancel()
@@ -91,6 +98,7 @@ async def app_cancel_processing(app):
                 await route.process_task
             except Exception:
                 pass
+    await app['stack'].__aexit__(None, None, None)
 
 
 def add_static_resource(app, resource_name, route, *args, **kwargs):
@@ -205,7 +213,7 @@ async def route_ws(request):
     route = await load_route(request.app, route_id)
 
     if not await request_has_access_to_route(request, route):
-        ws.send_str(json.dumps({'error': 'no permission'}))
+        await ws.send_str(json.dumps({'error': 'no permission'}))
         await ws.close()
         return ws
 
@@ -215,13 +223,13 @@ async def route_ws(request):
     route_sessions.append(ws)
 
     # Send initial data.
-    ws.send_str(json.dumps({'api_key': request.app['route_view.google_api'].api_key}))
+    await ws.send_str(json.dumps({'api_key': request.app['route_view.google_api'].api_key}))
     for msg in route.get_existing_changes():
-        ws.send_str(json.dumps(msg, default=json_encode))
+        await ws.send_str(json.dumps(msg, default=json_encode))
 
     try:
         async for msg in ws:
-            if msg.tp == WSMsgType.text:
+            if msg.type == WSMsgType.text:
                 data = json.loads(msg.data)
                 # logging.debug(data)
                 if data == 'cancel':
@@ -230,21 +238,21 @@ async def route_ws(request):
                     await route.resume_processing()
                 if isinstance(data, dict) and 'add_pano_chain_item' in data:
                     await route.add_pano_chain_item(*data['add_pano_chain_item'])
-            if msg.tp == WSMsgType.close:
+            if msg.type == WSMsgType.close:
                 await ws.close()
-            if msg.tp == WSMsgType.error:
+            if msg.type == WSMsgType.error:
                 raise ws.exception()
     finally:
         route_sessions.remove(ws)
     return ws
 
 
-def change_callback(route_sessions, change):
+async def change_callback(route_sessions, change):
     msg = json.dumps(change, default=json_encode)
     # logging.debug(str(change)[:120])
     for session in route_sessions:
         try:
-            session.send_str(msg)
+            await session.send_str(msg)
         except Exception:
             logging.exception('Error sending to client: ')
 
