@@ -28,6 +28,7 @@ defaults_yaml = """
 
     logging:
         version: 1
+        disable_existing_loggers: false
         handlers:
             console:
                 formatter: generic
@@ -43,17 +44,9 @@ defaults_yaml = """
             handlers: [console, ]
 
         loggers:
-            route_view:
-                 level: INFO
-                 qualname: route_view
-
-            aiohttp:
-                 level: INFO
-                 qualname: aiohttp
-
-            asyncio:
-                 level: INFO
-                 qualname: asyncio
+        aiohttp.access:
+            level: ERROR
+            qualname: aiohttp.access
 
 """
 
