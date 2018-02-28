@@ -1,7 +1,5 @@
 document.addEventListener('DOMContentLoaded', function() {
 
-    var desired_speed = 300 / 3.6;
-
     var pano_rotate = new google.maps.StreetViewPanorama(document.getElementById('pano_rotate'),{
         imageDateControl: true,
         visible: false
@@ -164,6 +162,25 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     var playing = true;
+    var desired_speed_el = document.getElementById('desired_speed');
+    var desired_speed = 300 / 3.6;
+
+    function update_desired_speed() {
+        if (!isNaN(desired_speed_el.valueAsNumber) && desired_speed_el.valueAsNumber >= 50) {
+            desired_speed = desired_speed_el.valueAsNumber / 3.6;
+        } else {
+            desired_speed = 50 / 3.6;
+        }
+        if (playing) {
+            if (show_next_pano_timeout) {
+                clearTimeout(show_next_pano_timeout);
+                show_next_pano_timeout = null;
+            }
+            continue_play();
+        }
+    }
+    desired_speed_el.addEventListener('input', update_desired_speed);
+    desired_speed_el.addEventListener('change', update_desired_speed);
 
     function pause() {
         playing = false;
@@ -250,7 +267,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function load_next_panos(){
         var processed_this_func = 0;
-        while (num_panos_loading < max_panos_loading && panos_loaded_at < panos.length - 1 && panos_loaded_at < current_pano_index + 500 ) {
+        while (num_panos_loading < max_panos_loading && panos_loaded_at < panos.length - 1 && panos_loaded_at < current_pano_index + 1000 ) {
             panos_loaded_at ++;
             load_pano(panos_loaded_at);
             processed_this_func ++;
@@ -416,7 +433,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
     }
-
+    update_desired_speed();
 
 }, false);
 
