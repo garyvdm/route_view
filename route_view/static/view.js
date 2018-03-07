@@ -46,6 +46,7 @@ document.addEventListener('DOMContentLoaded', function() {
     var route_points = [];
     var total_distance = null;
 
+    var distance = document.getElementById('dist_display');
     var processing_status = document.getElementById('processing_status');
     var play_status = document.getElementById('play_status');
     var play_pause = document.getElementById('play_pause');
@@ -312,6 +313,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         current_pano_index = pano_index
         var pano = panos[pano_index];
+        dist_display.innerText = Math.round(pano.at_dist / 100) / 10
 
         play_progress_context.clearRect(0, 0, 1000, 10);
         play_progress_context.fillStyle = "#FFFFFF";
