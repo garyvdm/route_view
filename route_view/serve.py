@@ -23,7 +23,7 @@ defaults_yaml = """
     aioserver_debug: False
     data_path: data
     lmdb_path: data/lmdb
-    lmdb_map_size: 1250000000   # 10 GB
+    lmdb_map_size: 10000000000   # 10 GB
 
     logging:
         version: 1
